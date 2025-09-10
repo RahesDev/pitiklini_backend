@@ -253,9 +253,9 @@ if (myip == "62.72.31.215") {
     console.log("HTTP Server running on", key.port);
   });
 }
-server.listen(key.port, "0.0.0.0", () => {
-  console.log("Server connected on", key.port);
-});
+// server.listen(key.port, "0.0.0.0", () => {
+//   console.log("Server connected on", key.port);
+// });
 // server.listen(key.port, () => {
 //   console.log("Server connected on", key.port);
 // });
