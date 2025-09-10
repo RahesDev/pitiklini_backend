@@ -231,11 +231,27 @@ if (myip == "62.72.31.215") {
     cert: fs.readFileSync("/var/www/html/backend/sslfiles/fullchain.pem"),
     requestCert: false,
   };
-  server = https.createServer(options, app);
-  startSocket(server);
+  // server = https.createServer(options, app);
+  // startSocket(server);
+  const httpsServer = https.createServer(options, app);
+  startSocket(httpsServer);
+  httpsServer.listen(key.port, "0.0.0.0", () => {
+    console.log("HTTPS Server running on", key.port);
+  });
+
+  // optional HTTP fallback for testing
+  const httpServer = http.createServer(app);
+  httpServer.listen(3032, "0.0.0.0", () => {
+    console.log("HTTP Server running on 3032");
+  });
 } else {
-  server = http.createServer(app);
-  startSocket(server);
+  // server = http.createServer(app);
+  // startSocket(server);
+  const httpServer = http.createServer(app);
+  startSocket(httpServer);
+  httpServer.listen(key.port, "0.0.0.0", () => {
+    console.log("HTTP Server running on", key.port);
+  });
 }
 server.listen(key.port, "0.0.0.0", () => {
   console.log("Server connected on", key.port);
