@@ -16,12 +16,14 @@ const userCryptoAddress = require("../schema/userCryptoAddress");
 //BTC DEPOSIT FUNCION 
 const btcdeposit =async function (address, userId, currencySymbol, currency) {
   try {
+    console.log("btc logs----", address, userId, currencySymbol, currency);
   const apiUrl = `${process.env.BTC_URL_1}${address}${process.env.BTC_URL_2}`;
   
   const response = await axios.get(apiUrl);
   const transactions = response.data;
   if(transactions.length > 0)
   {
+    console.log("btc logs 222222----", address, userId, currencySymbol, currency);
     await Promise.allSettled(transactions.map(async (tx) => {
       const existingDeposit = await depositDB.findOne({ txnid: tx.txid });
       let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
