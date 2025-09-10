@@ -22,8 +22,8 @@ var userCryptoAddress = require("./userAddress/getAddress");
 var mobileUserCryptoAddress = require("./userAddress/mobileGetAddress");
 const swap = require("./routes/swap");
 const mobileSwap = require("./routes/mobileSwap");
-var p2pRouter = require('./routes/p2p');
-var mobileP2pRouter = require('./routes/mobileP2P');
+var p2pRouter = require("./routes/p2p");
+var mobileP2pRouter = require("./routes/mobileP2P");
 var trade = require("./routes/trade");
 var referralRouter = require("./routes/referral");
 var onboardingRouter = require("./routes/onboarding");
@@ -48,7 +48,7 @@ var activeOrdersRedis = require("./tradeRedis/activeOrderRedis");
 // var BinanceExchangeWS = require("./exchanges/Binance_New");
 var BinanceExchangeWS = require("./exchanges/binance");
 
-redisCache.updateRedisPairs(() => { });
+redisCache.updateRedisPairs(() => {});
 
 activeOrdersRedis.activeOrdersSet();
 
@@ -56,18 +56,17 @@ BinanceExchangeWS.currentOrderBook("element");
 
 BinanceExchangeWS.currencyConversion();
 
-common.currency_conversion(function(resp){});
-
+common.currency_conversion(function (resp) {});
 
 const port = key.port;
 
-var staking = require('./staking/staking');
-var mobileStaking = require('./staking/mobileStaking');
+var staking = require("./staking/staking");
+var mobileStaking = require("./staking/mobileStaking");
 const DATASPIKE_API_KEY = process.env.DATASPIKE_API_KEY;
-// const WEBHOOK_URL = "https://db5d-2406-7400-ca-b6f9-7180-fb05-6e34-6ed5.ngrok-free.app/kyc/webhook"; 
-const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook"; 
-const DATASPIKE_API_URL = "https://sandboxapi.dataspike.io/api/v3/organization/webhooks";
-
+// const WEBHOOK_URL = "https://db5d-2406-7400-ca-b6f9-7180-fb05-6e34-6ed5.ngrok-free.app/kyc/webhook";
+const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook";
+const DATASPIKE_API_URL =
+  "https://sandboxapi.dataspike.io/api/v3/organization/webhooks";
 
 var app = express();
 
@@ -118,20 +117,19 @@ app.use("/orderCancelApi", orderCancel);
 app.use("/chartapi", chartRouter);
 app.use("/marketTrades", marketTrades);
 app.use("/swap", swap);
-app.use('/staking', staking);
-app.use('/p2p', p2pRouter);
-app.use('/referral', referralRouter);
-app.use('/onboarding', onboardingRouter);
+app.use("/staking", staking);
+app.use("/p2p", p2pRouter);
+app.use("/referral", referralRouter);
+app.use("/onboarding", onboardingRouter);
 
-app.use('/callOnboarding', mobileOnboardingRouter);
+app.use("/callOnboarding", mobileOnboardingRouter);
 // app.use('/callDeposit', mobileDepositRouter);
-app.use('/callAddress', mobileUserCryptoAddress);
-app.use('/callStaking', mobileStaking);
-app.use('/callKyc', mobileKycRouter);
-app.use('/callSwap', mobileSwap);
-app.use('/callSupport', mobileSupportRouter);
-app.use('/callp2p', mobileP2pRouter);
-
+app.use("/callAddress", mobileUserCryptoAddress);
+app.use("/callStaking", mobileStaking);
+app.use("/callKyc", mobileKycRouter);
+app.use("/callSwap", mobileSwap);
+app.use("/callSupport", mobileSupportRouter);
+app.use("/callp2p", mobileP2pRouter);
 
 const { startSocket } = require("./services/socket/socket");
 
@@ -139,27 +137,32 @@ app.use("/trade", trade);
 
 require("./routes/adminMove");
 
-
 const listWebhooks = async () => {
   try {
     const headers = { "ds-api-token": DATASPIKE_API_KEY };
     const response = await axios.get(DATASPIKE_API_URL, { headers });
 
     console.log("Existing Webhooks:", JSON.stringify(response.data, null, 2));
-    return response.data.webhooks || []; 
+    return response.data.webhooks || [];
   } catch (error) {
-    console.error("Error fetching webhooks:", error.response?.data || error.message);
+    console.error(
+      "Error fetching webhooks:",
+      error.response?.data || error.message
+    );
     return [];
   }
 };
 
 const deleteWebhook = async (webhookId) => {
   try {
-    console.log(webhookId,"webhookId==")
+    console.log(webhookId, "webhookId==");
     const headers = { "ds-api-token": DATASPIKE_API_KEY };
     await axios.delete(`${DATASPIKE_API_URL}/${webhookId}`, { headers });
   } catch (error) {
-    console.error(`Webhook deletion failed (${webhookId}):`, error.response?.data || error.message);
+    console.error(
+      `Webhook deletion failed (${webhookId}):`,
+      error.response?.data || error.message
+    );
   }
 };
 
@@ -175,25 +178,32 @@ const registerWebhook = async () => {
       webhook_url: WEBHOOK_URL,
       event_types: ["AML_SCREENING", "DOCVER"],
       // redirect_url:"http://localhost:3000/kyc",
-      redirect_url:"https://pitiklini.blfdemo.online/kyc",
+      redirect_url: "https://pitiklini.blfdemo.online/kyc",
       enabled: true,
     };
 
     const response = await axios.post(DATASPIKE_API_URL, payload, { headers });
     console.log("Webhook registered successfully:", response.data);
   } catch (error) {
-    console.error("Webhook registration failed:", error.response?.data || error.message);
+    console.error(
+      "Webhook registration failed:",
+      error.response?.data || error.message
+    );
   }
 };
 
 const resetWebhook = async () => {
   try {
     const webhooks = await listWebhooks();
-    
-    const matchingWebhooks = webhooks.filter(w => w.webhook_url === WEBHOOK_URL);
+
+    const matchingWebhooks = webhooks.filter(
+      (w) => w.webhook_url === WEBHOOK_URL
+    );
 
     if (matchingWebhooks.length > 0) {
-      console.log(`Found ${matchingWebhooks.length} existing webhook(s) with the same URL. Deleting...`);
+      console.log(
+        `Found ${matchingWebhooks.length} existing webhook(s) with the same URL. Deleting...`
+      );
 
       for (const webhook of matchingWebhooks) {
         await deleteWebhook(webhook.webhook_id);
@@ -202,12 +212,14 @@ const resetWebhook = async () => {
 
     await registerWebhook();
   } catch (error) {
-    console.error("Error in webhook reset process:", error.response?.data || error.message);
+    console.error(
+      "Error in webhook reset process:",
+      error.response?.data || error.message
+    );
   }
 };
 
 // resetWebhook();
-
 
 var server = "";
 var ip = require("ip");
@@ -225,8 +237,11 @@ if (myip == "62.72.31.215") {
   server = http.createServer(app);
   startSocket(server);
 }
-server.listen(key.port, () => {
+server.listen(key.port, "0.0.0.0", () => {
   console.log("Server connected on", key.port);
 });
+// server.listen(key.port, () => {
+//   console.log("Server connected on", key.port);
+// });
 
 module.exports = app;
