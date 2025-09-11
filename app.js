@@ -225,34 +225,41 @@ var server = "";
 var ip = require("ip");
 var myip = ip.address();
 console.log("myip===", myip);
-if (myip == "62.72.31.215") {
-  const options = {
-    key: fs.readFileSync("/var/www/html/backend/sslfiles/privkey.pem"),
-    cert: fs.readFileSync("/var/www/html/backend/sslfiles/fullchain.pem"),
-    requestCert: false,
-  };
-  // server = https.createServer(options, app);
-  // startSocket(server);
-  const httpsServer = https.createServer(options, app);
-  startSocket(httpsServer);
-  httpsServer.listen(key.port, "0.0.0.0", () => {
-    console.log("HTTPS Server running on", key.port);
-  });
+// if (myip == "62.72.31.215") {
+//   const options = {
+//     key: fs.readFileSync("/var/www/html/backend/sslfiles/privkey.pem"),
+//     cert: fs.readFileSync("/var/www/html/backend/sslfiles/fullchain.pem"),
+//     requestCert: false,
+//   };
+//   // server = https.createServer(options, app);
+//   // startSocket(server);
+//   const httpsServer = https.createServer(options, app);
+//   startSocket(httpsServer);
+//   httpsServer.listen(key.port, "0.0.0.0", () => {
+//     console.log("HTTPS Server running on", key.port);
+//   });
 
-  // optional HTTP fallback for testing
-  const httpServer = http.createServer(app);
-  httpServer.listen(3032, "0.0.0.0", () => {
-    console.log("HTTP Server running on 3032");
-  });
-} else {
-  // server = http.createServer(app);
-  // startSocket(server);
-  const httpServer = http.createServer(app);
-  startSocket(httpServer);
-  httpServer.listen(key.port, "0.0.0.0", () => {
-    console.log("HTTP Server running on", key.port);
-  });
-}
+//   // optional HTTP fallback for testing
+//   const httpServer = http.createServer(app);
+//   httpServer.listen(3032, "0.0.0.0", () => {
+//     console.log("HTTP Server running on 3032");
+//   });
+// } else {
+//   // server = http.createServer(app);
+//   // startSocket(server);
+//   const httpServer = http.createServer(app);
+//   startSocket(httpServer);
+//   httpServer.listen(key.port, "0.0.0.0", () => {
+//     console.log("HTTP Server running on", key.port);
+//   });
+// }
+
+const httpServer = http.createServer(app);
+startSocket(httpServer);
+httpServer.listen(3032, "0.0.0.0", () => {
+  console.log("Backend HTTP Server running on port 3032");
+});
+
 // server.listen(key.port, "0.0.0.0", () => {
 //   console.log("Server connected on", key.port);
 // });
