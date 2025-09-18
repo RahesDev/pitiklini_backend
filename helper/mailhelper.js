@@ -9,10 +9,10 @@ const axios = require('axios');
 
 const transporter = nodemailer.createTransport({
   secure: false,
-  port: process.env.EMAILPORT,
+  port: process.env.EMAIL_PORT,
   host: process.env.EMAIL_HOST,
   auth: {
-    user: process.env.FROM_EMAIL,
+    user: process.env.EMAIL_USERNAME,
     pass: process.env.EMAIL_PASSWORD,
   },
 });
@@ -114,61 +114,62 @@ const  mobileNumber= 7010889149
 
 // Main function to send an email
 const sendMail = async (options) => {
-  console.log(options,"dadsfasdfasdfasdfasdfas")
-  // try {
-  //   const mailOptions = {
-  //     from:  { name: process.env.FROM_NAME, address: process.env.FROM_EMAIL }, // Sender address
-  //     to: options.to, // List of recipients
-  //     subject: options.subject, // Subject line
-  //     html: options.html // HTML body
-  //   };
+  console.log(options, "dadsfasdfasdfasdfasdfas")
+  try {
+    const mailOptions = {
+      // from:  { name: process.env.FROM_NAME, address: process.env.FROM_EMAIL }, // Sender address
+      from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
+      to: options.to, // List of recipients
+      subject: options.subject, // Subject line
+      html: options.html // HTML body
+    };
 
-  //   // Send email using the transporter
-  //   const result = await transporter.sendMail(mailOptions);
-  //   console.log("Email sent: ", result);
-  //   return result;
-  //   // return {status:true}
-  // } catch (error) {
-  //   console.error("Error sending email: ", error);
-  //   throw error;
-  // }
+    // Send email using the transporter
+    const result = await transporter.sendMail(mailOptions);
+    console.log("Email sent: ", result);
+    return result;
+    // return {status:true}
+  } catch (error) {
+    console.error("Error sending email: ", error);
+    throw error;
+  }
 
-   try {
-      const response = await axios.post(
-        'https://api.brevo.com/v3/smtp/email',
-        {
-          sender: {
-            name: process.env.FROM_NAME,
-            email: process.env.FROM_EMAIL
-          },
-          to: [
-            {
-              email: options.to,
-              name: 'John Doe'
-            }
-          ],
-          subject: options.subject,
-          htmlContent: options.html
-        },
-        {
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'api-key': process.env.BREVO_APIKEY
-          }
-        }
-      );
+  //  try {
+  //     const response = await axios.post(
+  //       'https://api.brevo.com/v3/smtp/email',
+  //       {
+  //         sender: {
+  //           name: process.env.FROM_NAME,
+  //           email: process.env.FROM_EMAIL
+  //         },
+  //         to: [
+  //           {
+  //             email: options.to,
+  //             name: 'John Doe'
+  //           }
+  //         ],
+  //         subject: options.subject,
+  //         htmlContent: options.html
+  //       },
+  //       {
+  //         headers: {
+  //           // Accept: 'application/json',
+  //           'Content-Type': 'application/json',
+  //           'api-key': process.env.BREVO_APIKEY
+  //         }
+  //       }
+  //     );
   
-      console.log('Email sent successfully:', response.data);
+  //     console.log('Email sent successfully:', response.data);
 
-      if(response.data != null)
-      {
-        return true;
-      }
-    } catch (error) {
-      console.error('Error sending email:', error.response ? error.response.data : error.message);
-      return false;
-    }
+  //     if(response.data != null)
+  //     {
+  //       return true;
+  //     }
+  //   } catch (error) {
+  //     console.error('Error sending email:', error.response ? error.response.data : error.message);
+  //     return false;
+  //   }
 };
 
 
