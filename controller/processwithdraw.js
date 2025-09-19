@@ -22,7 +22,8 @@ const notify = require("../schema/notification");
 
 async function generateSignature(url) {
     await sodium.ready;
-    const message = Buffer.from(url, 'utf8');
+    // const message = Buffer.from(url, 'utf8');
+    const message = Buffer.from(new URL(url).pathname, "utf8");
     const privateKey = Buffer.from(process.env.PRIVATEKEY_WITHDRAW, 'hex');
     const signature = sodium.crypto_sign_detached(message, privateKey);
     return Buffer.from(signature).toString('hex');
