@@ -7026,8 +7026,15 @@ exports.currency_conversion = async function (callback) {
       result["PTK"] = {
         USDT: PTKUsdPrice,
         USD: PTKUsdPrice,
-        EUR: PTKUsdPrice * (result.USD?.EUR || await fetchFiatConversion("USD", "EUR")),
-        RUB: PTKUsdPrice * (result.USD?.RUB || await fetchFiatConversion("USD", "RUB")),
+        INR:
+          PTKUsdPrice *
+          (result.USD?.INR || (await fetchFiatConversion("USD", "INR"))),
+        EUR:
+          PTKUsdPrice *
+          (result.USD?.EUR || (await fetchFiatConversion("USD", "EUR"))),
+        RUB:
+          PTKUsdPrice *
+          (result.USD?.RUB || (await fetchFiatConversion("USD", "RUB"))),
         CUP: PTKUsdPrice * usdToCupRate,
       };
     } else {
