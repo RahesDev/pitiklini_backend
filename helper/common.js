@@ -7053,6 +7053,8 @@ async function fetchCryptoComparePrices(fiat_from, fiat_to) {
     console.log("Fetching CryptoCompare:", url);
     let response = await axios.get(url);
 
+    // console.log("response fetchCryptoComparePrices =========", response);
+
     if (response.data.Response === "Error") {
       const fallbackUrl = `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fiat_from.join(",")}&tsyms=${fiat_to.join(",")}&api_key=${process.env.cryptocompare_api_3}`;
       response = await axios.get(fallbackUrl);
@@ -7066,21 +7068,61 @@ async function fetchCryptoComparePrices(fiat_from, fiat_to) {
 }
 
 // Fetch USD to CUP via exchangerate.host
+// async function fetchFiatConversion(from, to) {
+//   try {
+//     const response = await axios.get(`https://api.exchangerate.host/convert?from=${from}&to=${to}&amount=1&access_key=7ebefd97325cda22696e7d6f31cec2a3`);
+//     if (response.data && response.data.result) {
+//       return response.data.result;
+//     } else {
+//       console.warn(`Missing rate from ${from} to ${to}`);
+//       if (from === 'USD' && to === 'CUP') {
+//         console.warn(`API missing rate, using fallback static rate for ${from} to ${to}`);
+//         return 24.00; // Example fallback value (update as needed)
+//       }
+//       return null;
+//     }
+//   } catch (err) {
+//     console.error(`Failed to convert ${from} to ${to}:`, err.message);
+//     return null;
+//   }
+// }
 async function fetchFiatConversion(from, to) {
   try {
-    const response = await axios.get(`https://api.exchangerate.host/convert?from=${from}&to=${to}&amount=1&access_key=7ebefd97325cda22696e7d6f31cec2a3`);
+    const cacheKey = `fiat:${from}:${to}`;
+
+    // Step 1: Try Redis cache
+    const cached = await redisHelper.RedisService.get(cacheKey);
+    if (cached) {
+      return cached; // use cached value
+    }
+
+    // Step 2: Call API if not cached
+    const url = `https://api.exchangerate.host/convert?from=${from}&to=${to}&amount=1&access_key=7ebefd97325cda22696e7d6f31cec2a3`;
+    const response = await axios.get(url);
+
     if (response.data && response.data.result) {
-      return response.data.result;
+      const rate = response.data.result;
+
+      // Step 3: Save to Redis with expiry (e.g. 30 mins)
+      await redisHelper.RedisService.set(cacheKey, rate);
+      client.expire(cacheKey, 1800); // 1800 sec = 30 mins
+
+      return rate;
     } else {
       console.warn(`Missing rate from ${from} to ${to}`);
-      if (from === 'USD' && to === 'CUP') {
-        console.warn(`API missing rate, using fallback static rate for ${from} to ${to}`);
-        return 24.00; // Example fallback value (update as needed)
+      if (from === "USD" && to === "CUP") {
+        console.warn(`Using fallback static rate for USD→CUP`);
+        return 24.0;
       }
       return null;
     }
   } catch (err) {
     console.error(`Failed to convert ${from} to ${to}:`, err.message);
+
+    // Fallback if API fails
+    if (from === "USD" && to === "CUP") {
+      return 24.0;
+    }
     return null;
   }
 }
