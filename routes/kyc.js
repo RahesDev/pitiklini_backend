@@ -14,8 +14,12 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET; 
 const DATASPIKE_API_URL = "https://sandboxapi.dataspike.io/api/v3";
 const DATASPIKE_API_KEY = process.env.DATASPIKE_API_KEY;
-const REDIRECT_URL = "https://pitiklini.blfdemo.online/kyc"; // Redirect back to your website after verification
-const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook"; 
+// const REDIRECT_URL = "https://pitiklini.blfdemo.online/kyc"; // Redirect back to your website after verification
+// const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook"; 
+// const REDIRECT_URL = "https://localhost:3000/kyc";
+// const WEBHOOK_URL = "https://localhost:3032/kyc/webhook"; 
+const REDIRECT_URL = "https://pitiklini.com/kyc";
+const WEBHOOK_URL = "https://pitiklini.com/kyc/webhook"; 
 
 const userRedis = require('../redis-helper/userRedis');
 //USER SIDE  =========================================

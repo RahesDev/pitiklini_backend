@@ -64,7 +64,9 @@ var staking = require("./staking/staking");
 var mobileStaking = require("./staking/mobileStaking");
 const DATASPIKE_API_KEY = process.env.DATASPIKE_API_KEY;
 // const WEBHOOK_URL = "https://db5d-2406-7400-ca-b6f9-7180-fb05-6e34-6ed5.ngrok-free.app/kyc/webhook";
-const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook";
+// const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook";
+const WEBHOOK_URL = "https://pitiklini.com/kyc/webhook";
+// const WEBHOOK_URL = "https://localhost:3032/kyc/webhook";
 const DATASPIKE_API_URL =
   "https://sandboxapi.dataspike.io/api/v3/organization/webhooks";
 
@@ -178,7 +180,8 @@ const registerWebhook = async () => {
       webhook_url: WEBHOOK_URL,
       event_types: ["AML_SCREENING", "DOCVER"],
       // redirect_url:"http://localhost:3000/kyc",
-      redirect_url: "https://pitiklini.blfdemo.online/kyc",
+      // redirect_url: "https://pitiklini.blfdemo.online/kyc",
+      redirect_url: "https://pitiklini.com/kyc",
       enabled: true,
     };
 
