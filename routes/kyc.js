@@ -315,11 +315,6 @@ router.post(
 
 router.post("/webhook", async (req, res) => {
   try {
-    console.log("Webhook processed consoleeeeee")
-    return res
-      .status(200)
-      .json({ success: true, message: "Webhook processed successfully" });
-    
     const { payload } = req.body;
     const { applicant_id, external_id, status, checks } = payload;
 
