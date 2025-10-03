@@ -354,6 +354,15 @@ router.post("/webhook", async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+        const userId = getuser._id.toString();
+        userRedis.getUser(userId, function (datas) {
+          if (datas) {
+            console.log("Redis updated for user:", userId);
+          } else {
+            console.log("Redis update failed for user:", userId);
+          }
+        });
+
     const USERNAME = getuser.displayname;
 
     let findDetails = await antiPhishing.findOne({ userid: external_id });
