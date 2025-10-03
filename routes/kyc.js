@@ -347,32 +347,26 @@ router.post(
       }
 
       if (findUser.verifyEmail == 0) {
-        return res
-          .status(400)
-          .json({
-            status: false,
-            message: "Your account is not activated. Please verify to continue",
-          });
+        return res.status(400).json({
+          status: false,
+          message: "Your account is not activated. Please verify to continue",
+        });
       }
 
       if (findUser.loginStatus == 1) {
-        return res
-          .status(403)
-          .json({
-            status: false,
-            message:
-              "Your account is disabled. Please contact admin for assistance.",
-          });
+        return res.status(403).json({
+          status: false,
+          message:
+            "Your account is disabled. Please contact admin for assistance.",
+        });
       }
 
       if (findUser.kycstatus == 1) {
-        return res
-          .status(400)
-          .json({
-            status: false,
-            message:
-              "Your KYC verification has already been completed. Thank you for your cooperation!",
-          });
+        return res.status(400).json({
+          status: false,
+          message:
+            "Your KYC verification has already been completed. Thank you for your cooperation!",
+        });
       }
 
       if (!DATASPIKE_API_KEY) {
@@ -387,71 +381,98 @@ router.post(
       };
       let applicantId = findUser.applicantId;
 
-          async function createProductionApplicant() {
-            const applicantResp = await axios.post(
-              `${DATASPIKE_API_URL}/applicants`,
-              { external_id: userId },
+      // Helper function: Create or fetch production applicant
+      async function createOrFetchProductionApplicant(userId) {
+        try {
+          const applicantResp = await axios.post(
+            `${DATASPIKE_API_URL}/applicants`,
+            { external_id: userId },
+            { headers }
+          );
+          const newId = applicantResp.data.id;
+          await usersDB.findByIdAndUpdate(userId, { applicantId: newId });
+          return newId;
+        } catch (err) {
+          if (
+            err.response &&
+            err.response.data?.error ===
+              "Applicant with specified external_id already exists in your organization"
+          ) {
+            console.log(
+              "Applicant already exists in production, fetching existing applicant..."
+            );
+            const fetchResp = await axios.get(
+              `${DATASPIKE_API_URL}/applicants?external_id=${userId}`,
               { headers }
             );
-            const newId = applicantResp.data.id;
-            await usersDB.findByIdAndUpdate(userId, { applicantId: newId });
-            return newId;
-          }
 
-      if (!applicantId) {
-        applicantId = await createProductionApplicant();
+            if (fetchResp.data && fetchResp.data[0]) {
+              const existingId = fetchResp.data[0].id;
+              await usersDB.findByIdAndUpdate(userId, {
+                applicantId: existingId,
+              });
+              return existingId;
+            } else {
+              throw new Error(
+                "Could not fetch existing applicant from production"
+              );
+            }
+          } else {
+            throw err;
+          }
+        }
       }
 
-  let verificationResponse;
-  try {
-    verificationResponse = await axios.post(
-      `${DATASPIKE_API_URL}/verifications`,
-      {
-        applicant_id: applicantId,
-        redirect_url: REDIRECT_URL,
-        webhook_url: WEBHOOK_URL,
-        document_types: ["passport", "driver_license", "id_card"],
-        selfie_check: true,
-      },
-      { headers }
-    );
-  } catch (err) {
-    // If error due to sandbox/invalid applicantId → create new production applicant
-    if (
-      err.response &&
-      (err.response.status === 404 ||
-        err.response.status === 403 ||
-        err.response.status === 400)
-    ) {
-      console.log(
-        "ApplicantId invalid (sandbox), creating new production applicant..."
-      );
-      applicantId = await createProductionApplicant();
-      // retry verification session
-      verificationResponse = await axios.post(
-        `${DATASPIKE_API_URL}/verifications`,
-        {
-          applicant_id: applicantId,
-          redirect_url: REDIRECT_URL,
-          webhook_url: WEBHOOK_URL,
-          document_types: ["passport", "driver_license", "id_card"],
-          selfie_check: true,
-        },
-        { headers }
-      );
-    } else {
-      console.error(
-        "Error creating verification session:",
-        err.response?.data || err.message
-      );
-      return res
-        .status(500)
-        .json({
-          status: false,
-          message: "Failed to create verification session",
-        });
-    }
-  }
+      // If no applicantId in DB → create/fetch production applicant
+      if (!applicantId) {
+        applicantId = await createOrFetchProductionApplicant(userId);
+      }
+
+      let verificationResponse;
+      try {
+        // Try to create verification session
+        verificationResponse = await axios.post(
+          `${DATASPIKE_API_URL}/verifications`,
+          {
+            applicant_id: applicantId,
+            redirect_url: REDIRECT_URL,
+            webhook_url: WEBHOOK_URL,
+            document_types: ["passport", "driver_license", "id_card"],
+            selfie_check: true,
+          },
+          { headers }
+        );
+      } catch (err) {
+        // If sandbox/invalid applicant → replace with production
+        if (err.response && [400, 403, 404].includes(err.response.status)) {
+          console.log(
+            "ApplicantId invalid (sandbox), creating/fetching production applicant..."
+          );
+          applicantId = await createOrFetchProductionApplicant(userId);
+
+          // retry verification session
+          verificationResponse = await axios.post(
+            `${DATASPIKE_API_URL}/verifications`,
+            {
+              applicant_id: applicantId,
+              redirect_url: REDIRECT_URL,
+              webhook_url: WEBHOOK_URL,
+              document_types: ["passport", "driver_license", "id_card"],
+              selfie_check: true,
+            },
+            { headers }
+          );
+        } else {
+          console.error(
+            "Error creating verification session:",
+            err.response?.data || err.message
+          );
+          return res.status(500).json({
+            status: false,
+            message: "Failed to create verification session",
+          });
+        }
+      }
       console.log("DataSpike Verification Created:", verificationResponse.data);
 
       const { id, verification_url } = verificationResponse.data;
