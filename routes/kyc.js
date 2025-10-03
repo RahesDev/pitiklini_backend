@@ -405,9 +405,16 @@ router.post(
               `${DATASPIKE_API_URL}/applicants?external_id=${userId}`,
               { headers }
             );
+            console.log("fetchResp exiiissssssssss--", fetchResp, fetchResp.data);
+            let existingApplicant = null;
+            if (Array.isArray(fetchResp.data)) {
+              existingApplicant = fetchResp.data[0];
+            } else if (Array.isArray(fetchResp.data?.data)) {
+              existingApplicant = fetchResp.data.data[0];
+            }
 
-            if (fetchResp.data && fetchResp.data[0]) {
-              const existingId = fetchResp.data[0].id;
+            if (existingApplicant) {
+              const existingId = existingApplicant.id;
               await usersDB.findByIdAndUpdate(userId, {
                 applicantId: existingId,
               });
