@@ -294,7 +294,13 @@ router.post(
         },
         { headers },
       );
-
+      console.log(
+        "userId -- ", userId,
+        "REDIRECT_URL -- ", REDIRECT_URL,
+        "WEBHOOK_URL -- ", WEBHOOK_URL,
+        "headers -- ", headers,
+        "total response send -- ", response, 
+      );
       console.log("DataSpike Verification Created:", response.data);
 
       const { id, verification_url } = response.data;
@@ -315,9 +321,11 @@ router.post(
 
 router.post("/webhook", async (req, res) => {
   try {
+    
     const { payload } = req.body;
     const { applicant_id, external_id, status, checks } = payload;
-
+    console.log(" webhook req.body payload -- ", payload);
+    
     await usersDB.findOneAndUpdate(
       { applicantId: applicant_id },
       { kycstatus: 1 }
