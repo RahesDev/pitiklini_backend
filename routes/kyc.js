@@ -12,8 +12,8 @@ var kycDB = require("../schema/kyc");
 const async = require("async");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET; 
-// const DATASPIKE_API_URL = "https://sandboxapi.dataspike.io/api/v3";
-const DATASPIKE_API_URL = "https://api.dataspike.io/api/v3";
+const DATASPIKE_API_URL = "https://sandboxapi.dataspike.io/api/v3";
+// const DATASPIKE_API_URL = "https://api.dataspike.io/api/v3";
 const DATASPIKE_API_KEY = process.env.DATASPIKE_API_KEY;
 // const REDIRECT_URL = "https://pitiklini.blfdemo.online/kyc"; // Redirect back to your website after verification
 // const WEBHOOK_URL = "https://pitiklini.blfdemo.online:3033/kyc/webhook"; 
@@ -294,13 +294,13 @@ router.post(
         },
         { headers },
       );
-      console.log(
-        "userId -- ", userId,
-        "REDIRECT_URL -- ", REDIRECT_URL,
-        "WEBHOOK_URL -- ", WEBHOOK_URL,
-        "headers -- ", headers,
-        "total response send -- ", response, 
-      );
+      // console.log(
+      //   "userId -- ", userId,
+      //   "REDIRECT_URL -- ", REDIRECT_URL,
+      //   "WEBHOOK_URL -- ", WEBHOOK_URL,
+      //   "headers -- ", headers,
+      //   "total response send -- ", response, 
+      // );
       console.log("DataSpike Verification Created:", response.data);
 
       const { id, verification_url } = response.data;
@@ -324,7 +324,7 @@ router.post("/webhook", async (req, res) => {
     
     const { payload } = req.body;
     const { applicant_id, external_id, status, checks } = payload;
-    console.log(" webhook req.body payload -- ", payload);
+    // console.log(" webhook req.body payload -- ", payload);
     
     await usersDB.findOneAndUpdate(
       { applicantId: applicant_id },
