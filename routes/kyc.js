@@ -230,6 +230,94 @@ router.post("/savekycs", common.isEmpty, common.tokenmiddleware, (req, res) => {
   }
 });
 
+// router.post(
+//   "/create-verification-session",
+//   common.tokenmiddleware,
+//   async (req, res) => {
+//     try {
+//       const userId = req.userId;
+
+//       const findUser = await usersDB
+//         .findOne({ _id: userId }, { kycstatus: 1, status: 1, verifyEmail: 1, loginStatus: 1, applicantId: 1 })
+//         .exec();
+
+//       console.log("User Found:", findUser);
+
+//       if (!findUser) {
+//         return res.status(404).json({ status: false, message: "User not found" });
+//       }
+
+//       if (findUser.verifyEmail == 0) {
+//         return res.status(400).json({ status: false, message: "Your account is not activated. Please verify to continue" });
+//       }
+
+//       if (findUser.loginStatus == 1) {
+//         return res.status(403).json({ status: false, message: "Your account is disabled. Please contact admin for assistance." });
+//       }
+
+//       if (findUser.kycstatus == 1) {
+//         return res.status(400).json({ status: false, message: "Your KYC verification has already been completed. Thank you for your cooperation!" });
+//       }
+
+//       if (!DATASPIKE_API_KEY) {
+//         console.error("DataSpike API Key is missing");
+//         return res.status(500).json({ status: false, message: "Missing DataSpike API Key" });
+//       }
+//       let applicantId = findUser.applicantId;
+
+//       if (!applicantId) {
+//         const headers = {
+//           "ds-api-token": DATASPIKE_API_KEY, 
+//           "Content-Type": "application/json",
+//         };
+//         const applicantResponse = await axios.post(
+//           `${DATASPIKE_API_URL}/applicants`,
+//           { external_id: userId },
+//           { headers }
+//         );
+//         applicantId = applicantResponse.data.id;
+//         await usersDB.findByIdAndUpdate(userId, { applicantId }); 
+//       }
+
+//       const headers = {
+//         "ds-api-token": DATASPIKE_API_KEY, 
+//         "Content-Type": "application/json",
+//       };
+//       const response = await axios.post(
+//         `${DATASPIKE_API_URL}/verifications`,
+//         {
+//           applicant_id: applicantId,
+//           redirect_url: REDIRECT_URL,
+//           webhook_url: WEBHOOK_URL,
+//           document_types: ["passport", "driver_license", "id_card"], 
+//           selfie_check: true, 
+//         },
+//         { headers },
+//       );
+//       // console.log(
+//       //   "userId -- ", userId,
+//       //   "REDIRECT_URL -- ", REDIRECT_URL,
+//       //   "WEBHOOK_URL -- ", WEBHOOK_URL,
+//       //   "headers -- ", headers,
+//       //   "total response send -- ", response, 
+//       // );
+//       console.log("DataSpike Verification Created:", response.data);
+
+//       const { id, verification_url } = response.data;
+
+//       return res.status(201).json({
+//         status: true,
+//         message: "Verification session created successfully",
+//         sessionId: id,
+//         url: verification_url, 
+//       });
+//     } catch (error) {
+//       console.error(" Error in Verification Session:", error.response?.data || error.message);
+//       res.status(500).json({ status: false, message: "Internal server error", code: 500 });
+//     }
+//   }
+// );
+
 router.post(
   "/create-verification-session",
   common.tokenmiddleware,
@@ -238,86 +326,153 @@ router.post(
       const userId = req.userId;
 
       const findUser = await usersDB
-        .findOne({ _id: userId }, { kycstatus: 1, status: 1, verifyEmail: 1, loginStatus: 1, applicantId: 1 })
+        .findOne(
+          { _id: userId },
+          {
+            kycstatus: 1,
+            status: 1,
+            verifyEmail: 1,
+            loginStatus: 1,
+            applicantId: 1,
+          }
+        )
         .exec();
 
       console.log("User Found:", findUser);
 
       if (!findUser) {
-        return res.status(404).json({ status: false, message: "User not found" });
+        return res
+          .status(404)
+          .json({ status: false, message: "User not found" });
       }
 
       if (findUser.verifyEmail == 0) {
-        return res.status(400).json({ status: false, message: "Your account is not activated. Please verify to continue" });
+        return res
+          .status(400)
+          .json({
+            status: false,
+            message: "Your account is not activated. Please verify to continue",
+          });
       }
 
       if (findUser.loginStatus == 1) {
-        return res.status(403).json({ status: false, message: "Your account is disabled. Please contact admin for assistance." });
+        return res
+          .status(403)
+          .json({
+            status: false,
+            message:
+              "Your account is disabled. Please contact admin for assistance.",
+          });
       }
 
       if (findUser.kycstatus == 1) {
-        return res.status(400).json({ status: false, message: "Your KYC verification has already been completed. Thank you for your cooperation!" });
+        return res
+          .status(400)
+          .json({
+            status: false,
+            message:
+              "Your KYC verification has already been completed. Thank you for your cooperation!",
+          });
       }
 
       if (!DATASPIKE_API_KEY) {
         console.error("DataSpike API Key is missing");
-        return res.status(500).json({ status: false, message: "Missing DataSpike API Key" });
+        return res
+          .status(500)
+          .json({ status: false, message: "Missing DataSpike API Key" });
       }
-      let applicantId = findUser.applicantId;
-
-      if (!applicantId) {
-        const headers = {
-          "ds-api-token": DATASPIKE_API_KEY, 
-          "Content-Type": "application/json",
-        };
-        const applicantResponse = await axios.post(
-          `${DATASPIKE_API_URL}/applicants`,
-          { external_id: userId },
-          { headers }
-        );
-        applicantId = applicantResponse.data.id;
-        await usersDB.findByIdAndUpdate(userId, { applicantId }); 
-      }
-
       const headers = {
-        "ds-api-token": DATASPIKE_API_KEY, 
+        "ds-api-token": DATASPIKE_API_KEY,
         "Content-Type": "application/json",
       };
-      const response = await axios.post(
+      let applicantId = findUser.applicantId;
+
+          async function createProductionApplicant() {
+            const applicantResp = await axios.post(
+              `${DATASPIKE_API_URL}/applicants`,
+              { external_id: userId },
+              { headers }
+            );
+            const newId = applicantResp.data.id;
+            await usersDB.findByIdAndUpdate(userId, { applicantId: newId });
+            return newId;
+          }
+
+      if (!applicantId) {
+        applicantId = await createProductionApplicant();
+      }
+
+  let verificationResponse;
+  try {
+    verificationResponse = await axios.post(
+      `${DATASPIKE_API_URL}/verifications`,
+      {
+        applicant_id: applicantId,
+        redirect_url: REDIRECT_URL,
+        webhook_url: WEBHOOK_URL,
+        document_types: ["passport", "driver_license", "id_card"],
+        selfie_check: true,
+      },
+      { headers }
+    );
+  } catch (err) {
+    // If error due to sandbox/invalid applicantId → create new production applicant
+    if (
+      err.response &&
+      (err.response.status === 404 ||
+        err.response.status === 403 ||
+        err.response.status === 400)
+    ) {
+      console.log(
+        "ApplicantId invalid (sandbox), creating new production applicant..."
+      );
+      applicantId = await createProductionApplicant();
+      // retry verification session
+      verificationResponse = await axios.post(
         `${DATASPIKE_API_URL}/verifications`,
         {
           applicant_id: applicantId,
           redirect_url: REDIRECT_URL,
           webhook_url: WEBHOOK_URL,
-          document_types: ["passport", "driver_license", "id_card"], 
-          selfie_check: true, 
+          document_types: ["passport", "driver_license", "id_card"],
+          selfie_check: true,
         },
-        { headers },
+        { headers }
       );
-      // console.log(
-      //   "userId -- ", userId,
-      //   "REDIRECT_URL -- ", REDIRECT_URL,
-      //   "WEBHOOK_URL -- ", WEBHOOK_URL,
-      //   "headers -- ", headers,
-      //   "total response send -- ", response, 
-      // );
-      console.log("DataSpike Verification Created:", response.data);
+    } else {
+      console.error(
+        "Error creating verification session:",
+        err.response?.data || err.message
+      );
+      return res
+        .status(500)
+        .json({
+          status: false,
+          message: "Failed to create verification session",
+        });
+    }
+  }
+      console.log("DataSpike Verification Created:", verificationResponse.data);
 
-      const { id, verification_url } = response.data;
+      const { id, verification_url } = verificationResponse.data;
 
       return res.status(201).json({
         status: true,
         message: "Verification session created successfully",
         sessionId: id,
-        url: verification_url, 
+        url: verification_url,
       });
     } catch (error) {
-      console.error(" Error in Verification Session:", error.response?.data || error.message);
-      res.status(500).json({ status: false, message: "Internal server error", code: 500 });
+      console.error(
+        " Error in Verification Session:",
+        error.response?.data || error.message
+      );
+      res
+        .status(500)
+        .json({ status: false, message: "Internal server error", code: 500 });
     }
   }
 );
-
 
 router.post("/webhook", async (req, res) => {
   try {
