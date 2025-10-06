@@ -670,30 +670,32 @@ async function processWithdrawal2(req, res) {
                 return res.status(400).json({ status: false, message: 'Currency not found.' });
             }
 
-            let tokenAddress;
+          let tokenAddress;
+          let tokenDecimal;
             if (networkType === 'BEP20') {
             tokenAddress = currency.contractAddress_bep20;
-            coinDecimal = currency.coinDecimal_bep20;
+            tokenDecimal = currency.coinDecimal_bep20;
             } else if (networkType === 'ERC20') {
             tokenAddress = currency.contractAddress_erc20;
-            coinDecimal = currency.coinDecimal_erc20;
+            tokenDecimal = currency.coinDecimal_erc20;
             } else if (networkType === 'TRC20') {
             console.log("heeeeeeeeee")
             tokenAddress = currency.contractAddress_trc20;
-            coinDecimal = currency.coinDecimal_trc20;
+            tokenDecimal = currency.coinDecimal_trc20;
             }
        
             
             const walletData = {
-                userId: userId,
-                amount: amount,
-                receiveamount:receiveamount,
-                fees:fees,
-                currency: currencyId,
-                address: withdrawalAddress,
-                networkType,
-                tokenAddress,
-                coinDecimal
+              userId: userId,
+              amount: receiveamount,
+              totalamount: amount,
+              receiveamount: receiveamount,
+              fees: fees,
+              currency: currencyId,
+              address: withdrawalAddress,
+              networkType,
+              tokenAddress,
+              tokenDecimal,
             };
 
             console.log("Wallet Data:", walletData);
@@ -774,7 +776,8 @@ async function processWithdrawal2(req, res) {
                 privateKey: reconstructedKey,
                 toAddress: walletData.address,
                 amount: walletData.amount * 1e6,
-                tokenAddress: walletData.tokenAddress
+                  tokenAddress: walletData.tokenAddress,
+                tokenDecimal: walletData.tokenDecimal
                 };
             }else if (networkType === 'ERC20' || networkType === 'BEP20') {
                 // walletServiceUrl = 'http://localhost:3034/api/v1/evmChain/mainnet/ethTransfer';
@@ -785,8 +788,9 @@ async function processWithdrawal2(req, res) {
                     toAddress: walletData.address,
                     amount: walletData.amount,
                     chain: walletData.networkType === 'ERC20' ? 'ETH' : 'BNB',
-                    tokenAddress: walletData.tokenAddress,
-                    coinDecimal: walletData.coinDecimal
+                  tokenAddress: walletData.tokenAddress,
+                    tokenDecimal: walletData.tokenDecimal
+                    // coinDecimal: walletData.coinDecimal
                 };
             }else if(currency.currencySymbol === 'BNB'){
                 
