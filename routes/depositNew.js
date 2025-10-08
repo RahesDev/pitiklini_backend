@@ -91,94 +91,131 @@ const btcdeposit =async function (address, userId, currencySymbol, currency) {
 //ETH DEPOSIT FUNCION 
 const ethdeposit = async function (address, userId, currencySymbol, currency, admin_address) {
   try {
-    var currency_find= await currencyDB.findOne({currencySymbol:currencySymbol});
-    // const history = await provider.getHistory(address); 
-    const url = `https://${process.env.ETH_API}?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
-    
-    // console.log("eth deposit url===",url);
+    var currency_find = await currencyDB.findOne({
+      currencySymbol: currencySymbol,
+    });
+    // const history = await provider.getHistory(address);
+    // const url = `https://${process.env.ETH_API}?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    const url = `https://${process.env.ETH_API}/api?chainid=1&module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const response = await axios.post(url, {
+    //   headers: { Authorization: `Bearer ${process.env.ETHKEY}` },
+    //   // params: { limit: 100 }, // optional
+    // });
+
+    console.log("eth deposit url===", url);
     // console.log("call admin_address",admin_address);
-      const response = await axios.get(url);
+    const response = await axios.get(url);
 
-       const responseTxn = response.data.result;
-      //  console.log("eth deposit response====",responseTxn);
-      //  console.log("eth deposit response type ====",typeof responseTxn);
-       if(responseTxn.length > 0 && typeof responseTxn == "object")
-       {
-        await Promise.allSettled(responseTxn.map(async (tx) => {
+    //  const responseTxn = response.data.result;
+    //  console.log("eth deposit response====",responseTxn);
+    //  console.log("eth deposit response type ====",typeof responseTxn);
+    //  if(responseTxn?.length > 0 && typeof responseTxn == "object")
+    //  {
 
-          if(tx.to.toLowerCase() == address.toLowerCase())
-          {
-          const fromAddress = tx.from.toLowerCase();
+    const data = response.data;
+    console.log("eth response data -->>",data)
+    // Validate response
+    if (!data || data.status !== "1" || !Array.isArray(data.result)) {
+      console.error("Invalid ETH API response:", data);
+      return;
+    }
+        const responseTxn = data.result;
+        console.log("eth deposit response count:", responseTxn.length);
+
+    await Promise.allSettled(
+      responseTxn.map(async (tx) => {
+        if (tx.to?.toLowerCase() == address.toLowerCase()) {
+          const fromAddress = tx.from?.toLowerCase();
           admin_address = admin_address.toLowerCase();
-          
-          if(fromAddress != admin_address)
-          {
-            console.log("call 111")
+
+          if (fromAddress != admin_address) {
+            console.log("call 111");
             const existingDeposit = await depositDB.findOne({ txnid: tx.hash });
-            let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
-            if(!existingDeposit || existingDeposit == null) {
-             // console.log("call 222")
-              const depamt = tx.value/Math.pow(10, currency_find.coinDecimal?currency_find.coinDecimal:'18'); // Convert Wei to ETH
+            let address_detail = await userCryptoAddress
+              .findOne({ address: address })
+              .collation({ locale: "en", strength: 2 });
+            if (!existingDeposit || existingDeposit == null) {
+              // console.log("call 222")
+              const depamt =
+                tx.value /
+                Math.pow(
+                  10,
+                  currency_find.coinDecimal ? currency_find.coinDecimal : "18"
+                ); // Convert Wei to ETH
               const create_deposit_obj = {
-                  userId: userId,
-                  currency: currency,
-                  currencySymbol: currencySymbol,
-                  depamt: parseFloat(depamt),
-                  depto: address,
-                  txnid: tx.hash,
-                  currencyMoveStatus:0,
-                  createdDate :new Date(),
-                  modifiedDate:new Date(),
+                userId: userId,
+                currency: currency,
+                currencySymbol: currencySymbol,
+                depamt: parseFloat(depamt),
+                depto: address,
+                txnid: tx.hash,
+                currencyMoveStatus: 0,
+                createdDate: new Date(),
+                modifiedDate: new Date(),
               };
-              const create_deposit = await depositDB.create(create_deposit_obj)
+              const create_deposit = await depositDB.create(create_deposit_obj);
               //console.log(create_deposit,"create_deposit")
-              if(address_detail.type == 1){
+              if (address_detail.type == 1) {
                 const result = await adminWalletDB.findOneAndUpdate(
                   { type: 1 },
-                  { wallets: { $elemMatch: { currencySymbol: currencySymbol } } },
                   {
-                  $inc: { 'wallets.$.amount': depamt }
+                    wallets: { $elemMatch: { currencySymbol: currencySymbol } },
                   },
                   {
-                  returnOriginal: false // Return the updated document
+                    $inc: { "wallets.$.amount": depamt },
+                  },
+                  {
+                    returnOriginal: false, // Return the updated document
                   }
+                );
+                //console.log(result,"result")
+
+                if (result.value) {
+                  const updatedWallet = result.value.wallets.find(
+                    (w) => w.currencySymbol === currencySymbol
                   );
-                  //console.log(result,"result")
-                  
-                  if (result.value) {
-                  const updatedWallet = result.value.wallets.find(w => w.currencySymbol === currencySymbol);
                   //console.log(`Updated balance for user ${userId}: ${updatedWallet.amount}`);
-                  } else {
+                } else {
                   //console.log(`User wallet not found for user ${userId}`);
-                  }
-              }else{
-                const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+                }
+              } else {
+                const userWallet = await userWalletDB.findOne({
+                  userId: userId,
+                  "wallets.currencyId": currency,
+                });
                 if (userWallet) {
-                    const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-                if (walletIndex !== -1) {
+                  const walletIndex = userWallet.wallets.findIndex((w) =>
+                    w.currencyId.equals(currency)
+                  );
+                  if (walletIndex !== -1) {
                     userWallet.wallets[walletIndex].amount += depamt;
                     await userWallet.save();
                     //console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
-                    await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate); // Similar to ETH transfers
-                } else {
+                    await email_function(
+                      create_deposit_obj.userId,
+                      create_deposit_obj.currencySymbol,
+                      create_deposit_obj.txnid,
+                      create_deposit_obj.depamt,
+                      userWallet.wallets[walletIndex].amount,
+                      create_deposit_obj.createdDate
+                    ); // Similar to ETH transfers
+                  } else {
                     //console.log(`Currency not found in wallet for user ${userId}`);
-                    }
+                  }
                 } else {
-                    //  console.log(`Wallet not found for user ${userId}`);
+                  //  console.log(`Wallet not found for user ${userId}`);
                 }
+              }
             }
-            }
+          } else {
+            console.log("calll 222");
           }
-          else
-          {
-            console.log("calll 222")
-          }
-          }
-          
-         }));
-       }
-      
-      } catch (error) {
+        }
+      })
+    );
+
+    //  }
+  } catch (error) {
       console.error("Error:", error);
       }
 };
@@ -187,16 +224,27 @@ const ethdeposit = async function (address, userId, currencySymbol, currency, ad
 const bnbdeposit =async function (address, userId, currencySymbol, currency, admin_address) {
   try {
     var currency_find= await currencyDB.findOne({_id:currency});
-    const url = `https://${process.env.BSC_API}/api?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
+    // const url = `https://${process.env.BSC_API}/api?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
+    // const response = await axios.get(url);
+    const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const response = await axios.get(url, {
+    //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
+    //   // params: { limit: 100 }, // optional
+    // });
+    // const responseTxn = response.data.result;
     const response = await axios.get(url);
-    const responseTxn = response.data.result;
-    console.log("bnb chain transactions ===",responseTxn);
-    if(responseTxn.length > 0 && typeof responseTxn == "object")
-    {
+    const data = response.data;
+    console.log("bnb chain transactions ===", data);
+    // if(responseTxn.length > 0 && typeof responseTxn == "object")
+    // {
+
+     if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
+     const responseTxn = data.result;
+
      await Promise.allSettled(responseTxn.map(async (tx) => {
-       if(tx.to.toLowerCase() == address.toLowerCase())
+       if(tx.to?.toLowerCase() == address.toLowerCase())
        {
-       const fromAddress = tx.from.toLowerCase();
+       const fromAddress = tx.from?.toLowerCase();
        admin_address = admin_address.toLowerCase();
        if(fromAddress != admin_address)
        {
@@ -257,7 +305,7 @@ const bnbdeposit =async function (address, userId, currencySymbol, currency, adm
        }
        }
       }));
-    }
+    // }
     
    } catch (err) {
        console.log(err, "error");
@@ -312,14 +360,26 @@ const get_bnb_token = async function (userId, address) {
 
 const bnbtokendeposit = async function (address, userId, currencySymbol, currency, tokenContractAddress,decimal) {
   try{
-    const url = `https://${process.env.BSC_API}/api?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
-    const response = await axios.get(url);
-    const responseTxn = response.data.result;
-    if(responseTxn.length > 0 && typeof responseTxn == "object")
-    {
+    // const url = `https://${process.env.BSC_API}/api?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
+    // const response = await axios.get(url);
+    const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const response = await axios.get(url, {
+    //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
+    //   // params: { limit: 100 },
+    // });
+
+    // const responseTxn = response.data.result;
+    // if(responseTxn.length > 0 && typeof responseTxn == "object")
+    // {
+const response = await axios.get(url);
+    const data = response.data;
+     console.log("bnb token transactions ===", data);
+        if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
+        const responseTxn = data.result;
+
       await Promise.allSettled(responseTxn.map(async (tx) => {
         try{
-          if(tx.to.toLowerCase() == address.toLowerCase())
+          if(tx.to?.toLowerCase() == address.toLowerCase())
           {
             const existingDeposit = await depositDB.findOne({ txnid: tx.hash }).exec();
             let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
@@ -360,7 +420,7 @@ const bnbtokendeposit = async function (address, userId, currencySymbol, currenc
             if (walletIndex !== -1) {
                 userWallet.wallets[walletIndex].amount += depamt;
                 await userWallet.save();
-                // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
+                console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
                 await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate,"BEP20"); // Similar to ETH transfers
       
             } else {
@@ -376,7 +436,7 @@ const bnbtokendeposit = async function (address, userId, currencySymbol, currenc
          //console.log(Err);
         }
          }));
-    }
+    // }
   }
   catch(err){
     console.log(err,"=-=-=-=")
@@ -430,15 +490,27 @@ const get_erc20_token = async function (userId, address) {
 
 const ethtokendeposit = async function ( userId,address, currencySymbol, currency, tokenContractAddress,decimal) {
   try{
-    const url = `https://${process.env.ETH_API}?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const url = `https://${process.env.ETH_API}?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const response = await axios.get(url);
+    const url = `https://${process.env.ETH_API}/api?chainid=1&module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+    // const response = await axios.post(url, {
+    //   headers: { Authorization: `Bearer ${process.env.ETHKEY}` },
+    //   // params: { limit: 100 },
+    // });
     const response = await axios.get(url);
-    const responseTxn = response.data.result;
-    if(responseTxn.length > 0 && typeof responseTxn == "object")
-    {
+    
+    // const responseTxn = response.data.result;
+    // if(responseTxn.length > 0 && typeof responseTxn == "object")
+    // {
+
+        const data = response.data;
+        if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
+        const responseTxn = data.result;
+
       await Promise.allSettled(responseTxn.map(async (tx) => {
         try{
           
-        if(tx.to.toLowerCase() == address.toLowerCase())
+        if(tx.to?.toLowerCase() == address.toLowerCase())
         {
           const existingDeposit = await depositDB.findOne({ txnid: tx.hash }).exec();
           let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
@@ -499,7 +571,7 @@ const ethtokendeposit = async function ( userId,address, currencySymbol, currenc
         }
        
          }));
-    }
+    // }
    
   }catch(err){
     console.log(err,"=-=-=-=")

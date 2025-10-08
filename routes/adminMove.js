@@ -976,7 +976,7 @@ const transferETHToken = async (
         from_address: userAddress,
         to_address: tokenAddress,
         amount: amount,
-        transaction_hash: receipt.transactionHash,
+        transaction_has: receipt.transactionHash,
         depositid: depositid,
       };
       await adminvMoveDB.create(obj);
@@ -1121,7 +1121,7 @@ const transferBnbToken = async (
         from_address: userAddress,
         to_address: adminAddress,
         amount: amount,
-        transaction_hash: receipt.transactionHash,
+        transaction_has: receipt.transactionHash,
         depositid: depositid,
       };
       await adminvMoveDB.create(obj);
@@ -1236,7 +1236,7 @@ const transferBNB = async (
         from_address: userAddress,
         to_address: adminAddress,
         amount: amount,
-        transaction_hash: receipt.transactionHash,
+        transaction_has: receipt.transactionHash,
         depositid: depositid,
       };
       await adminvMoveDB.create(obj);
