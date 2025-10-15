@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 const mongoosePaginate = require("mongoose-paginate-v2");
 
 const UserSchema = mongoose.Schema({
-  username: { type: String, },
+  username: { type: String },
   displayname: { type: String, required: true },
   firstname: { type: String, default: "" },
   lastname: { type: String, default: "" },
@@ -70,6 +70,15 @@ const UserSchema = mongoose.Schema({
   Tradereward: { type: Number, default: 0 },
   applicantId: { type: String, default: null },
   ptk_fee_status: { type: Number, default: 0 },
+  ratings: [
+    {
+      stars: { type: Number, required: true }, // 1..5
+      ratedBy: { type: mongoose.Types.ObjectId, ref: "Users" }, // who gave this rating
+      orderId: { type: mongoose.Types.ObjectId, ref: "p2pconfirmOrder" }, // optional link
+      date: { type: Date, default: Date.now },
+    },
+  ],
+  vipBadge: { type: Boolean, default: false },
 });
 UserSchema.plugin(mongoosePaginate);
 

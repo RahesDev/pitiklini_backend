@@ -766,8 +766,11 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
   try {
     const userId = req.userId;
     const getOrders = await p2pOrdersDB
-      .find({ status: { $in: ["active", "partially"] }, userId: { $ne: userId } })
-      .populate("userId", "displayname profile_image location")
+      .find({
+        status: { $in: ["active", "partially"] },
+        userId: { $ne: userId },
+      })
+      .populate("userId", "displayname profile_image location ratings")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -793,6 +796,25 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
           filled_trades > 0 ? (completed_trades / filled_trades) * 100 : 0;
         const available_qty =
           parseFloat(order.totalAmount) - parseFloat(order.processAmount);
+        
+        const sellerId = ObjectId(order.userId._id);
+
+        // *** 1️⃣ TOTAL TRADES (FILLED + PARTIALLY) ***
+        const total_trades = await p2pOrdersDB.countDocuments({
+          userId: sellerId,
+          status: { $in: ["filled", "partially"] },
+        });
+
+        // *** 2️⃣ STAR RATING AVERAGE ***
+        let avgStar = 0;
+        if (order.userId.ratings && order.userId.ratings.length > 0) {
+          const totalStars = order.userId.ratings.reduce(
+            (sum, obj) => sum + (obj.stars || 0),
+            0
+          );
+          avgStar = totalStars / order.userId.ratings.length;
+          avgStar = parseFloat(avgStar.toFixed(1)); // round to 1 decimal
+        }
 
         if (available_qty > 0) {
           return {
@@ -807,6 +829,8 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
             toLimit: order.toLimit,
             paymentMethod: order.paymentMethod,
             orderType: order.orderType,
+            trades: total_trades,
+            stars: avgStar,
             orders_count: completed_trades,
             rating,
             location: order.userId.location || "India",
@@ -817,7 +841,7 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
             available_qty: available_qty.toFixed(8),
             pay_duration: order.pay_time,
             date: order.createdAt,
-            requirements: order.requirements
+            requirements: order.requirements,
           };
         }
 
@@ -845,7 +869,7 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
   try {
     const getOrders = await p2pOrdersDB
       .find({ status: { $in: ["active", "partially"] } })
-      .populate("userId", "displayname profile_image location")
+      .populate("userId", "displayname profile_image location ratings")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -872,6 +896,25 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
         const available_qty =
           parseFloat(order.totalAmount) - parseFloat(order.processAmount);
 
+        const sellerId = ObjectId(order.userId._id);
+
+        // *** 1️⃣ TOTAL TRADES (FILLED + PARTIALLY) ***
+        const total_trades = await p2pOrdersDB.countDocuments({
+          userId: sellerId,
+          status: { $in: ["filled", "partially"] },
+        });
+
+        // *** 2️⃣ STAR RATING AVERAGE ***
+        let avgStar = 0;
+        if (order.userId.ratings && order.userId.ratings.length > 0) {
+          const totalStars = order.userId.ratings.reduce(
+            (sum, obj) => sum + (obj.stars || 0),
+            0
+          );
+          avgStar = totalStars / order.userId.ratings.length;
+          avgStar = parseFloat(avgStar.toFixed(1)); // round to 1 decimal
+        }
+
         if (available_qty > 0) {
           return {
             orderId: order.orderId,
@@ -885,6 +928,8 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
             toLimit: order.toLimit,
             paymentMethod: order.paymentMethod,
             orderType: order.orderType,
+            trades: total_trades,
+            stars: avgStar,
             orders_count: completed_trades,
             rating,
             location: order.userId.location || "India",
@@ -894,7 +939,7 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
             user_id: common.encrypt(userId.toString()),
             available_qty: available_qty.toFixed(8),
             pay_duration: order.pay_time,
-            requirements: order.requirements
+            requirements: order.requirements,
           };
         }
         return null;
@@ -3616,6 +3661,57 @@ router.post("/get_dispute_chat", common.tokenmiddleware, async (req, res) => {
       data: [],
       message: "Something went wrong",
     });
+  }
+});
+
+router.post("/p2p_user_ratings", common.tokenmiddleware, async (req, res) => {
+  try {
+    const raterId = req.userId;
+    const { orderId, stars } = req.body;
+
+    if (!orderId || !stars) {
+      return res.json({ status: false, Message: "Invalid request" });
+    }
+
+    // find p2p order by orderId (orderId is the string orderId used in your app)
+    const p2pdet = await p2pconfirmOrder.findOne({ orderId: orderId }).exec();
+    if (!p2pdet) {
+      return res.json({ status: false, Message: "Order not found" });
+    }
+
+    // Determine which user is being rated (opponent)
+    let ratedUserId;
+    if (p2pdet.userId && p2pdet.map_userId) {
+      // If the rater is the same as userId then opponent is map_userId, else opponent is userId
+      if (p2pdet.userId.toString() === raterId.toString()) {
+        ratedUserId = p2pdet.map_userId;
+      } else {
+        ratedUserId = p2pdet.userId;
+      }
+    } else {
+      return res.json({ status: false, Message: "Invalid order data" });
+    }
+
+    // Save rating entry
+    await usersDB.findByIdAndUpdate(
+      ObjectId(ratedUserId),
+      {
+        $push: {
+          ratings: {
+            stars: Number(stars),
+            ratedBy: ObjectId(raterId),
+            orderId: p2pdet._id,
+            date: Date.now(),
+          },
+        },
+      },
+      { new: true, useFindAndModify: false }
+    );
+
+    return res.json({ status: true, Message: "Rating saved" });
+  } catch (err) {
+    console.error("p2p_user_ratings error:", err);
+    return res.json({ status: false, Message: "Something Went Wrong" });
   }
 });
 

@@ -535,6 +535,7 @@ router.post("/activatedUserList", common.tokenmiddleware, async (req, res) => {
         kycstatus: 1,
         mobileNumber: 1,
         loginStatus: 1,
+        vipBadge: 1,
       },
     };
 
@@ -560,6 +561,7 @@ router.post("/activatedUserList", common.tokenmiddleware, async (req, res) => {
       tfa_status: dval.tfastatus,
       kyc_status: dval.kycstatus,
       loginStatus: dval.loginStatus,
+      vipBadge: dval.vipBadge,
     }));
 
     // Calculate total pages and return response
@@ -610,6 +612,54 @@ router.post(
       res.json({
         status: true,
         Message: "User Account Status Updated Successfully",
+      });
+    } catch (error) {
+      res.json({
+        status: false,
+        Message: "Something Went Wrong. Please Try Again later",
+      });
+    }
+  }
+);
+
+router.post(
+  "/changeVipBadgeStatus",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const { _id, vipBadge } = req.body;
+
+      const updatedUser = await usersDB.findOneAndUpdate(
+        { _id },
+        {
+          $set: {
+            vipBadge: !vipBadge, // Toggle value
+            modifiedDate: Date.now(),
+          },
+        },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        return res.json({
+          status: false,
+          Message: "Failed to update VIP Badge status",
+        });
+      }
+
+      const userId = _id;
+      userRedis.getUser(userId, function (datas) {
+        if (datas) {
+          return res.json({
+            status: true,
+            Message: "VIP Badge Status Updated Successfully",
+          });
+        } else {
+          return res.json({
+            status: false,
+            Message: "Redis Update Failed",
+          });
+        }
       });
     } catch (error) {
       res.json({

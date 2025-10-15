@@ -414,10 +414,13 @@ const response = await axios.get(url);
                     // console.log(`Wallet not found for user ${userId}`);
                 }
               }else{
-          const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+                const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+                console.log("-----userwallet bnbtoken comes-----")
             if (userWallet) {
-                const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-            if (walletIndex !== -1) {
+              const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
+              console.log("-----walletIndex bnbtoken-----", walletIndex);
+              if (walletIndex !== -1) {
+              console.log("-----walletIndex bnbtoken -111111 -----");
                 userWallet.wallets[walletIndex].amount += depamt;
                 await userWallet.save();
                 console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
