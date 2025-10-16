@@ -10,7 +10,8 @@ const usersDB = require("../schema/users");
 const userLoginhistoryDB = require("../schema/userLoginHistory");
 const common = require('../helper/common');
 
-
+// ✅ Export Redis client to use everywhere
+module.exports.UserNewclient = client;
 
 
 getUser = exports.getUser = async (userId, callback) => {

@@ -31,6 +31,7 @@ var orderConfirmDB = require("../schema/confirmOrder");
 const loginAttemptsDB = require("../schema/loginAttempts");
 const redis = require("redis");
 client = redis.createClient();
+// const client = redis.createClient(key.redisdata);
 const BINANCEexchange = require("../exchanges/Binance_New");
 const { RedisService } = require("../services/redis");
 var adminWalletDB = require("../schema/adminWallet");
@@ -75,6 +76,7 @@ const loginLimiter = rateLimit({
   message: "Too many login attempts, please try again later.",
 });
 const userRedis = require("../redis-helper/userRedis");
+const { UserNewclient } = require("../redis-helper/userRedis");
 const p2pModel = require("../schema/p2pOrder");
 const swappingHistory = require("../schema/swap");
 
@@ -646,6 +648,8 @@ router.post(
           Message: "Failed to update VIP Badge status",
         });
       }
+
+      await UserNewclient.hdel("getUser", _id.toString());
 
       const userId = _id;
       userRedis.getUser(userId, function (datas) {
