@@ -29,6 +29,8 @@ var referralRouter = require("./routes/referral");
 var onboardingRouter = require("./routes/onboarding");
 var mobileOnboardingRouter = require("./routes/mobileonboarding");
 // var mobileDepositRouter = require("./routes/mobileDeposit");
+const bcrypt = require('bcrypt');
+const saltRounds = 12;
 
 var redisCache = require("./redis-helper/redisHelper");
 
@@ -222,7 +224,20 @@ const resetWebhook = async () => {
   }
 };
 
-// resetWebhook();
+// let encryptEmail = "CFAyuUFin+h5zp73cpduVvjtWo7sDvWZP37IoDu22dg=";
+// const decryptEmail = common.decrypt(encryptEmail);
+// console.log("decryptEmail admin mail ==>>", decryptEmail);
+
+// async function main() {
+//   let encryptPasswd =
+//     "PitikAdmin#1";
+//   const decryptPass = await bcrypt.hash(encryptPasswd, saltRounds);;
+//   console.log("decryptPass admin password ==>>", decryptPass);
+// }
+
+// main()
+
+// resetWebhook();  
 
 var server = "";
 var ip = require("ip");

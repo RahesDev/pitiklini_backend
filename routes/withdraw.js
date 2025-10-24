@@ -1975,127 +1975,312 @@ router.post("/withdraw_history", common.tokenmiddleware, (req, res) => {
 // });
 
 //new test -->
-router.post("/get_all_user_withdraw", common.tokenmiddleware, async (req, res) => {
-  try {
-    const pageSize = Number(req.body.pageSize) || 5;
-    const page = Number(req.body.currentPage) || 1;
-    const filterKeyword = req.body.filterKeyword || ""; // Get filter keyword from request
-    const skip = (page - 1) * pageSize;
+// router.post("/get_all_user_withdraw", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const pageSize = Number(req.body.pageSize) || 5;
+//     const page = Number(req.body.currentPage) || 1;
+//     const filterKeyword = req.body.filterKeyword || ""; // Get filter keyword from request
+//     const skip = (page - 1) * pageSize;
 
-    // Basic match query without filterKeyword
-    let matchQuery = {
-      type: 0,
-      withdraw_type: 0,
-      status: { $in: [1, 2, 3, 4] },
-    };
+//     // Basic match query without filterKeyword
+//     let matchQuery = {
+//       type: 0,
+//       withdraw_type: 0,
+//       status: { $in: [1, 2, 3, 4] },
+//     };
 
-    // Aggregation pipeline with updated stages
-    const pipeline = [
-      { $match: matchQuery },
-      {
-        $lookup: {
-          from: "users",
-          localField: "user_id",
-          foreignField: "_id",
-          as: "user_detail",
-        },
+//     // Aggregation pipeline with updated stages
+//     const pipeline = [
+//       { $match: matchQuery },
+//       {
+//         $lookup: {
+//           from: "users",
+//           localField: "user_id",
+//           foreignField: "_id",
+//           as: "user_detail",
+//         },
+//       },
+//       { $unwind: "$user_detail" },
+//       {
+//         $lookup: {
+//           from: "currency",
+//           localField: "currency_id",
+//           foreignField: "_id",
+//           as: "currency_detail",
+//         },
+//       },
+//       {
+//         $unwind: {
+//           path: "$currency_detail",
+//           preserveNullAndEmptyArrays: true, // Preserves docs without currency info
+//         },
+//       },
+//       // Apply the filterKeyword condition here after the $lookup stages
+//       ...(filterKeyword
+//         ? [
+//             {
+//               $match: {
+//                 "user_detail.displayname": { $regex: filterKeyword, $options: "i" },
+//               },
+//             },
+//           ]
+//         : []),
+//       {
+//         $project: {
+//           currency_symbol: 1,
+//           fromaddress: 1,
+//           withdraw_address: 1,
+//           amount: 1,
+//           receiveamount: 1,
+//           fees: 1,
+//           withdraw_type: 1,
+//           status: 1,
+//           txn_id: 1,
+//           created_at: 1,
+//           user_name: "$user_detail.displayname",
+//           email: "$user_detail.email",
+//           currency_name: { $ifNull: ["$currency_detail.currencyName", "Unknown"] },
+//         },
+//       },
+//       { $sort: { _id: -1 } },
+//       { $skip: skip },
+//       { $limit: pageSize },
+//     ];
+
+//     // Get total count only with matchQuery and filterKeyword applied
+//     const totalCountPipeline = [
+//       { $match: matchQuery },
+//       {
+//         $lookup: {
+//           from: "users",
+//           localField: "user_id",
+//           foreignField: "_id",
+//           as: "user_detail",
+//         },
+//       },
+//       { $unwind: "$user_detail" },
+//       ...(filterKeyword
+//         ? [
+//             {
+//               $match: {
+//                 "user_detail.displayname": { $regex: filterKeyword, $options: "i" },
+//               },
+//             },
+//           ]
+//         : []),
+//       { $count: "totalCount" },
+//     ];
+
+//     // Execute both pipelines
+//     const [withdrawData, totalCountData] = await Promise.all([
+//       withdrawDB.aggregate(pipeline),
+//       withdrawDB.aggregate(totalCountPipeline),
+//     ]);
+
+//     const totalCount = totalCountData[0] ? totalCountData[0].totalCount : 0;
+//     const totalPages = Math.ceil(totalCount / pageSize);
+
+//     return res.status(200).json({
+//       status: true,
+//       data: withdrawData,
+//       totalCount,
+//       totalPages,
+//       currentPage: page,
+//     });
+//   } catch (e) {
+//     console.log("Error in /get_all_user_withdraw:", e);
+//     return res.status(500).json({
+//       status: false,
+//       data: [],
+//       message: "Something went wrong",
+//     });
+//   }
+// });
+
+router.post(
+  "/get_all_user_withdraw",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const pageSize = Number(req.body.pageSize) || 5;
+      const page = Number(req.body.currentPage) || 1;
+      const filterKeyword = req.body.filterKeyword || ""; // Get filter keyword from request
+      const skip = (page - 1) * pageSize;
+
+      // Basic match query without filterKeyword
+      let matchQuery = {
+        type: 0,
+        withdraw_type: 0,
+        status: { $in: [1, 2, 3, 4] },
+      };
+
+      // Aggregation pipeline with updated stages
+const pipeline = [
+  { $match: matchQuery },
+
+  // Lookup users
+  {
+    $lookup: {
+      from: "users",
+      localField: "user_id",
+      foreignField: "_id",
+      as: "user_detail",
+    },
+  },
+
+  // Lookup admins
+  {
+    $lookup: {
+      from: "admins", // 👈 your admin collection name here
+      localField: "user_id",
+      foreignField: "_id",
+      as: "admin_detail",
+    },
+  },
+
+  {
+    // Merge user & admin logic
+    $addFields: {
+      final_name: {
+        $cond: [
+          { $gt: [{ $size: "$user_detail" }, 0] },
+          { $arrayElemAt: ["$user_detail.displayname", 0] },
+          "Admin",
+        ],
       },
-      { $unwind: "$user_detail" },
-      {
-        $lookup: {
-          from: "currency",
-          localField: "currency_id",
-          foreignField: "_id",
-          as: "currency_detail",
-        },
+      final_email: {
+        $cond: [
+          { $gt: [{ $size: "$user_detail" }, 0] },
+          { $arrayElemAt: ["$user_detail.email", 0] },
+          "-",
+        ],
       },
-      {
-        $unwind: {
-          path: "$currency_detail",
-          preserveNullAndEmptyArrays: true, // Preserves docs without currency info
+    },
+  },
+
+  {
+    $lookup: {
+      from: "currency",
+      localField: "currency_id",
+      foreignField: "_id",
+      as: "currency_detail",
+    },
+  },
+  {
+    $unwind: {
+      path: "$currency_detail",
+      preserveNullAndEmptyArrays: true,
+    },
+  },
+
+  ...(filterKeyword
+    ? [
+        {
+          $match: {
+            final_name: { $regex: filterKeyword, $options: "i" },
+          },
         },
-      },
-      // Apply the filterKeyword condition here after the $lookup stages
-      ...(filterKeyword
-        ? [
-            {
-              $match: {
-                "user_detail.displayname": { $regex: filterKeyword, $options: "i" },
-              },
-            },
-          ]
-        : []),
-      {
-        $project: {
-          currency_symbol: 1,
-          fromaddress: 1,
-          withdraw_address: 1,
-          amount: 1,
-          receiveamount: 1,
-          fees: 1,
-          withdraw_type: 1,
-          status: 1,
-          txn_id: 1,
-          created_at: 1,
-          user_name: "$user_detail.displayname",
-          email: "$user_detail.email",
-          currency_name: { $ifNull: ["$currency_detail.currencyName", "Unknown"] },
-        },
-      },
-      { $sort: { _id: -1 } },
-      { $skip: skip },
-      { $limit: pageSize },
-    ];
+      ]
+    : []),
 
-    // Get total count only with matchQuery and filterKeyword applied
-    const totalCountPipeline = [
-      { $match: matchQuery },
-      {
-        $lookup: {
-          from: "users",
-          localField: "user_id",
-          foreignField: "_id",
-          as: "user_detail",
-        },
-      },
-      { $unwind: "$user_detail" },
-      ...(filterKeyword
-        ? [
-            {
-              $match: {
-                "user_detail.displayname": { $regex: filterKeyword, $options: "i" },
-              },
-            },
-          ]
-        : []),
-      { $count: "totalCount" },
-    ];
+  {
+    $project: {
+      currency_symbol: 1,
+      fromaddress: 1,
+      withdraw_address: 1,
+      amount: 1,
+      receiveamount: 1,
+      fees: 1,
+      withdraw_type: 1,
+      status: 1,
+      txn_id: 1,
+      created_at: 1,
+      user_name: "$final_name",
+      email: "$final_email",
+      currency_name: { $ifNull: ["$currency_detail.currencyName", "Unknown"] },
+    },
+  },
 
-    // Execute both pipelines
-    const [withdrawData, totalCountData] = await Promise.all([
-      withdrawDB.aggregate(pipeline),
-      withdrawDB.aggregate(totalCountPipeline),
-    ]);
+  { $sort: { _id: -1 } },
+  { $skip: skip },
+  { $limit: pageSize },
+];
 
-    const totalCount = totalCountData[0] ? totalCountData[0].totalCount : 0;
-    const totalPages = Math.ceil(totalCount / pageSize);
+      // Get total count only with matchQuery and filterKeyword applied
+     const totalCountPipeline = [
+       { $match: matchQuery },
 
-    return res.status(200).json({
-      status: true,
-      data: withdrawData,
-      totalCount,
-      totalPages,
-      currentPage: page,
-    });
-  } catch (e) {
-    console.log("Error in /get_all_user_withdraw:", e);
-    return res.status(500).json({
-      status: false,
-      data: [],
-      message: "Something went wrong",
-    });
+       // lookup users
+       {
+         $lookup: {
+           from: "users",
+           localField: "user_id",
+           foreignField: "_id",
+           as: "user_detail",
+         },
+       },
+
+       // lookup admin
+       {
+         $lookup: {
+           from: "admins", // 👈 YOUR admin collection name
+           localField: "user_id",
+           foreignField: "_id",
+           as: "admin_detail",
+         },
+       },
+
+       {
+         $addFields: {
+           final_name: {
+             $cond: [
+               { $gt: [{ $size: "$user_detail" }, 0] },
+               { $arrayElemAt: ["$user_detail.displayname", 0] },
+               "Admin",
+             ],
+           },
+         },
+       },
+
+       ...(filterKeyword
+         ? [
+             {
+               $match: {
+                 final_name: { $regex: filterKeyword, $options: "i" },
+               },
+             },
+           ]
+         : []),
+
+       { $count: "totalCount" },
+     ];
+
+      // Execute both pipelines
+      const [withdrawData, totalCountData] = await Promise.all([
+        withdrawDB.aggregate(pipeline),
+        withdrawDB.aggregate(totalCountPipeline),
+      ]);
+
+      const totalCount = totalCountData[0] ? totalCountData[0].totalCount : 0;
+      const totalPages = Math.ceil(totalCount / pageSize);
+
+      return res.status(200).json({
+        status: true,
+        data: withdrawData,
+        totalCount,
+        totalPages,
+        currentPage: page,
+      });
+    } catch (e) {
+      console.log("Error in /get_all_user_withdraw:", e);
+      return res.status(500).json({
+        status: false,
+        data: [],
+        message: "Something went wrong",
+      });
+    }
   }
-});
+);
 
 
 router.post("/get_all_fiat_withdraw", common.tokenmiddleware, (req, res) => {
