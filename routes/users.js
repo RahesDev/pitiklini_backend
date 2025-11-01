@@ -23,6 +23,7 @@ var mongoose = require("mongoose");
 var userWalletDB = require("../schema/userWallet");
 var currencyDB = require("../schema/currency");
 var antiPhishing = require("../schema/antiphising");
+var fundTransferHistoryDB = require("../schema/fundTransferHistory");
 
 var binancefn = require("../exchanges/binance");
 const notifydb = require("../schema/notification");
@@ -12918,6 +12919,156 @@ router.post("/currencyConversion", async (req, res) => {
      
     }
   } catch (error) {}
+});
+
+router.post("/fundTransfer", common.tokenmiddleware, async (req, res) => {
+  try {
+    const { currencySymbol, currencyId, amount, email, userToken } = req.body;
+    const userId = req.userId;
+
+    if (!currencySymbol || !currencyId || !amount || !email || !userToken)
+      return res.json({ status: false, message: "All fields required" });
+
+    const findUser = await usersDB.findOne({ _id: userId });
+    if (!findUser)
+      return res.json({ status: false, message: "User not found" });
+
+    // 🧾 Step 1: Check KYC
+    if (findUser.kycstatus != 1)
+      return res.json({
+        status: false,
+        message: "Please complete KYC to perform fund transfer",
+      });
+
+    // 🔐 Step 2: Verify TFA
+    const verified = speakeasy.totp.verify({
+      secret: findUser.tfaenablekey,
+      encoding: "base32",
+      token: userToken,
+      window: 1,
+    });
+
+    if (!verified)
+      return res.json({ status: false, message: "Invalid 2FA code" });
+
+    // 📧 Step 3: Check receiver email
+    const encryptEmail = common.encrypt(email);
+    const receiver = await usersDB.findOne({ email: encryptEmail });
+    if (!receiver)
+      return res.json({ status: false, message: "Receiver not found" });
+
+    if (receiver._id.toString() === userId.toString())
+      return res.json({
+        status: false,
+        message: "You cannot transfer funds to yourself",
+      });
+
+    // 💰 Step 4: Check sender wallet
+    const senderWallet = await userWalletDB.findOne({ userId });
+    if (!senderWallet)
+      return res.json({ status: false, message: "Sender wallet not found" });
+
+    const senderCurrency = senderWallet.wallets.find(
+      (x) => x.currencySymbol === currencySymbol
+    );
+
+    if (!senderCurrency)
+      return res.json({ status: false, message: "Currency not found" });
+
+    if (senderCurrency.amount < amount)
+      return res.json({ status: false, message: "Insufficient balance" });
+
+    // ✅ Step 5: Deduct from sender
+    senderCurrency.amount -= Number(amount);
+    await senderWallet.save();
+
+    // ✅ Step 6: Add to receiver wallet
+    const receiverWallet = await userWalletDB.findOne({
+      userId: receiver._id,
+    });
+    if (!receiverWallet)
+      return res.json({ status: false, message: "Receiver wallet not found" });
+
+    const receiverCurrency = receiverWallet.wallets.find(
+      (x) => x.currencySymbol === currencySymbol
+    );
+
+    if (receiverCurrency) {
+      receiverCurrency.amount += Number(amount);
+    } else {
+      receiverWallet.wallets.push({
+        currencyName: currencySymbol,
+        currencySymbol,
+        currencyId,
+        amount,
+      });
+    }
+    await receiverWallet.save();
+
+    // 🧾 Step 7: Save history
+    const history = new fundTransferHistoryDB({
+      fromUserId: userId,
+      toUserId: receiver._id,
+      currencySymbol,
+      currencyId,
+      amount,
+    });
+    await history.save();
+
+    // 📨 Step 8: Send Email to Sender and Receiver
+    const senderMail = common.decrypt(findUser.email);
+    const receiverMail = common.decrypt(receiver.email);
+
+     const senderTemp = await mailtempDB.findOne({ key: "FUND_TRANSFER_SEND" });
+     if (senderTemp) {
+       const mailBody = senderTemp.body
+         .replace(/###USERNAME###/g, senderMail)
+         .replace(/###AMOUNT###/g, amount)
+         .replace(/###CURRENCY_SYMBOL###/g, currencySymbol)
+         .replace(/###DATE###/g, moment().format("YYYY-MM-DD HH:mm:ss"))
+
+       await mail.sendMail({
+         from: {
+           name: process.env.FROM_NAME,
+           address: process.env.FROM_EMAIL,
+         },
+         to: senderMail,
+         subject: senderTemp.Subject || "Fund Transfer Notification",
+         html: mailBody,
+       });
+     }
+    
+    const receiverTemp = await mailtempDB.findOne({
+      key: "FUND_TRANSFER_RECEIVE",
+    });
+    if (receiverTemp) {
+      const mailBody = receiverTemp.body
+        .replace(/###USERNAME###/g, receiverMail)
+        .replace(/###AMOUNT###/g, amount)
+        .replace(/###CURRENCY_SYMBOL###/g, currencySymbol)
+        .replace(/###DATE###/g, moment().format("YYYY-MM-DD HH:mm:ss"))
+        .replace(/###SENDER_NAME###/g, senderMail);
+
+      await mail.sendMail({
+        from: {
+          name: process.env.FROM_NAME,
+          address: process.env.FROM_EMAIL,
+        },
+        to: receiverMail,
+        subject: receiverTemp.Subject || "Funds Received Notification",
+        html: mailBody,
+      });
+    }
+
+    return res.json({
+      status: true,
+      message: "Fund transferred successfully",
+      data: { amount, to: email },
+    });
+  } catch (err) {
+    console.log("Error in fundTransfer", err);
+    return res.json({ status: false, message: "Internal server error" });
+  }
 });
 
 
