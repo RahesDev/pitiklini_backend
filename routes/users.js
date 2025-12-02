@@ -13133,9 +13133,7 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
       });
     }
 
-    // ---------------------------
     // 3. DEDUCT WALLET BEFORE RECHARGE
-    // ---------------------------
     usdtWallet.amount -= Number(cost_amount);
     await wallet.save();
 
