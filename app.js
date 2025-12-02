@@ -31,6 +31,7 @@ var mobileOnboardingRouter = require("./routes/mobileonboarding");
 // var mobileDepositRouter = require("./routes/mobileDeposit");
 const bcrypt = require('bcrypt');
 const saltRounds = 12;
+const { loadTopupCSV } = require("./utils/topupLoader");
 
 var redisCache = require("./redis-helper/redisHelper");
 
@@ -138,6 +139,11 @@ app.use("/callp2p", mobileP2pRouter);
 const { startSocket } = require("./services/socket/socket");
 
 app.use("/trade", trade);
+
+// loadTopupCSV();
+loadTopupCSV().then(() => {
+  console.log("Topup CSV ready");
+});
 
 require("./routes/adminMove");
 

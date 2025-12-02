@@ -24,6 +24,7 @@ var userWalletDB = require("../schema/userWallet");
 var currencyDB = require("../schema/currency");
 var antiPhishing = require("../schema/antiphising");
 var fundTransferHistoryDB = require("../schema/fundTransferHistory");
+var rechargeDB = require("../schema/rechargeDB");
 
 var binancefn = require("../exchanges/binance");
 const notifydb = require("../schema/notification");
@@ -83,6 +84,9 @@ const {  btcdeposit } = require("./depositNew");
 const saltRounds = 12;
 const userRedis = require("../redis-helper/userRedis");
 var paymentMethod = require("../schema/paymentMethod");
+
+const { getOperators, getPlans } = require("../utils/topupLoader");
+const qs = require("qs");
 
 const convertUsdToInr = async (usdValue) => {
   try {
@@ -13070,6 +13074,225 @@ router.post("/fundTransfer", common.tokenmiddleware, async (req, res) => {
     return res.json({ status: false, message: "Internal server error" });
   }
 });
+
+router.post("/get_operator_list", common.tokenmiddleware, async (req, res) => {
+  try {
+    const operators = getOperators();
+    res.json({ status: true, data: operators });
+  } catch (err) {
+    console.log(err);
+    res.json({ status: false, message: "Server error" });
+  }
+});
+
+router.post("/get_plan_list", common.tokenmiddleware, async (req, res) => {
+  try {
+ const { operatorCode } = req.body;
+
+ if (!operatorCode)
+   return res.json({ status: false, message: "operatorCode required" });
+
+ const plans = getPlans(operatorCode);
+
+ res.json({ status: true, data: plans });
+  } catch (err) {
+    console.log(err);
+    res.json({ status: false, message: "Server error" });
+  }
+});
+
+router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
+  try {
+    const { number, operatorCode, planId } = req.body;
+    const userId = req.userId;
+
+    if (!number || !operatorCode || !planId) {
+      return res.json({
+        status: false,
+        message: "number, operatorCode, planId are required",
+      });
+    }
+
+    // Prepare the body for Innoverit
+    const payload = {
+      apikey: process.env.INNOVERIT_KEY,
+      id_product: planId,
+      destination: number,
+      key: userId, // optional but useful
+      note: `Recharge for ${number}`,
+    };
+
+    console.log("Sending Topup Payload:", payload);
+    // return;
+
+    // const response = await axios.post(
+    //   "https://www.innoverit.com/api/v2/product/send",
+    //   payload
+    // );
+
+     const response = await axios.post(
+       "https://www.innoverit.com/api/v2/product/send",
+       qs.stringify(payload),
+       {
+         headers: {
+           "Content-Type": "application/x-www-form-urlencoded",
+         },
+       }
+     );
+
+    console.log("Recharge Response:", response.data);
+    const apiData = response.data;
+
+        const rechargeStatus =
+          apiData.error_code === 0 && apiData.status === "success"
+            ? "SUCCESS"
+            : "FAILED";
+
+    // const rechargeStatus =
+    //   response.data.status === "SUCCESS" ? "SUCCESS" : "FAILED";
+
+    // Save Recharge Record
+    await rechargeDB.create({
+      userId,
+      number,
+      operatorCode,
+      planId,
+      transactionId: apiData.recharge_id || "",
+      status: rechargeStatus,
+      date: new Date(),
+    });
+
+    if (rechargeStatus === "SUCCESS") {
+      return res.json({
+        status: true,
+        message: "Recharge Successful",
+        txnId: apiData.recharge_id,
+        balance: apiData.balance,
+        destination: apiData.destination,
+      });
+    } else {
+      return res.json({
+        status: false,
+        message: "Recharge Failed",
+        details: response.data,
+      });
+    }
+  } catch (err) {
+    console.log(err);
+    res.json({ status: false, message: "Internal error" });
+  }
+});
+// router.post("/get_operator_list", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const { destination } = req.body;
+//     const response = await axios.post(
+//       "https://www.innoverit.com/api/v2/product/get/operator",
+//       new URLSearchParams({
+//         apikey: process.env.INNOVERIT_KEY,
+//         destination: destination,
+//       }).toString(),
+//       {
+//         headers: {
+//           "Content-Type": "application/x-www-form-urlencoded",
+//         },
+//       }
+//       // {
+//       //   headers: { Authorization: `Bearer ${process.env.INNOVERIT_KEY}` },
+//       // }
+//     );
+//     console.log(
+//       "inooooooverriiittt resp.data----",
+//       response.data
+//     );
+//     if (response.data && response.data.status === "SUCCESS") {
+//       res.json({ status: true, data: response.data });
+//     } else {
+//       res.json({ status: false, message: "Unable to fetch operators" });
+//     }
+//   } catch (err) {
+//     console.log(err);
+//     res.json({ status: false, message: "Server error" });
+//   }
+// });
+
+// router.post("/get_plan_list", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const { operatorCode } = req.body;
+
+//     const response = await axios.post(
+//       "https://www.innoverit.com/api/v2/product/get/plans",
+//       new URLSearchParams({
+//         apikey: process.env.INNOVERIT_KEY,
+//         operator: operatorCode,
+//       }).toString(),
+//       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+//       // "https://api.innoverit.com/getPlans",
+//       // { operator: operatorCode },
+//       // { headers: { Authorization: `Bearer ${process.env.INNOVERIT_KEY}` } }
+//     );
+
+//     console.log("plans Response:", response.data);
+
+//     if (response.data && response.data.status === "SUCCESS") {
+//       res.json({ status: true, data: response.data.data });
+//     } else {
+//       res.json({ status: false, message: "No plans available" });
+//     }
+//   } catch (err) {
+//     console.log(err);
+//     res.json({ status: false, message: "Server error" });
+//   }
+// });
+
+// router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const { number, operatorCode, amount } = req.body;
+//     const userId = req.userId;
+
+//     // Call Innoverit recharge API
+//     const response = await axios.post(
+//       "https://www.innoverit.com/api/v2/recharge/topup",
+//       new URLSearchParams({
+//         apikey: process.env.INNOVERIT_KEY,
+//         destination: number,
+//         operator: operatorCode,
+//         amount,
+//       }).toString(),
+//       {
+//         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+//       }
+//       // "https://api.innoverit.com/recharge",
+//       // {
+//       //   mobile: number,
+//       //   operator: operatorCode,
+//       //   planId,
+//       // },
+//       // { headers: { Authorization: `Bearer ${process.env.INNOVERIT_KEY}` } }
+//     );
+
+//     console.log("Recharge Response:", response.data);
+
+//     if (response.data.status === "SUCCESS") {
+//       // Save recharge record in DB
+//       await rechargeDB.create({
+//         userId,
+//         number,
+//         operatorCode,
+//         amount,
+//         transactionId: response.data.txn_id,
+//         status: "SUCCESS",
+//         date: new Date(),
+//       });
+
+//       res.json({ status: true, message: "Recharge successful" });
+//     } else {
+//       res.json({ status: false, message: "Recharge failed" });
+//     }
+//   } catch (err) {
+//     console.log(err);
+//     res.json({ status: false, message: "Internal error" });
+//   }
+// });
 
 
 
