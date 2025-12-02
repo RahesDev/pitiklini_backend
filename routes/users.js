@@ -13103,22 +13103,53 @@ router.post("/get_plan_list", common.tokenmiddleware, async (req, res) => {
 
 router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
   try {
-    const { number, operatorCode, planId } = req.body;
+    const { number, operatorCode, planId, cost_amount } = req.body;
     const userId = req.userId;
 
-    if (!number || !operatorCode || !planId) {
+    if (!number || !operatorCode || !planId ) {
       return res.json({
         status: false,
         message: "number, operatorCode, planId are required",
       });
     }
 
+     const wallet = await userWalletDB.findOne({ userId });
+     if (!wallet) {
+       return res.json({ status: false, message: "Wallet not found!" });
+     }
+
+    const usdtWallet = wallet.wallets.find((w) => w.currencySymbol === "USDT");
+        if (!usdtWallet) {
+          return res.json({
+            status: false,
+            message: "USDT Wallet not found!",
+          });
+        }
+    
+    if (usdtWallet.amount < cost_amount) {
+      return res.json({
+        status: false,
+        message: "Insufficient USDT balance!",
+      });
+    }
+
+    // ---------------------------
+    // 3. DEDUCT WALLET BEFORE RECHARGE
+    // ---------------------------
+    usdtWallet.amount -= Number(cost_amount);
+    await wallet.save();
+
+     console.log(
+       `Wallet Deducted: ${cost_amount} USDT | New Balance: ${usdtWallet.amount}`
+     );
+
     // Prepare the body for Innoverit
     const payload = {
       apikey: process.env.INNOVERIT_KEY,
       id_product: planId,
       destination: number,
-      key: userId, // optional but useful
+      // key: userId, 
+      key: `RECHARGE_${userId}_${Date.now()}`,
       note: `Recharge for ${number}`,
     };
 
@@ -13151,12 +13182,22 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
     // const rechargeStatus =
     //   response.data.status === "SUCCESS" ? "SUCCESS" : "FAILED";
 
+        if (rechargeStatus === "FAILED") {
+          usdtWallet.amount += Number(cost_amount); // refund
+          await wallet.save();
+
+          console.log(
+            `Recharge failed. Refunded: ${cost_amount} USDT | Balance Restored: ${usdtWallet.amount}`
+          );
+        }
+
     // Save Recharge Record
     await rechargeDB.create({
       userId,
       number,
       operatorCode,
       planId,
+      amount: cost_amount,
       transactionId: apiData.recharge_id || "",
       status: rechargeStatus,
       date: new Date(),
@@ -13169,6 +13210,7 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
         txnId: apiData.recharge_id,
         balance: apiData.balance,
         destination: apiData.destination,
+        amount: cost_amount,
       });
     } else {
       return res.json({

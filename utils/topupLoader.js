@@ -39,6 +39,8 @@ function getPlans(operatorName) {
       amount: r.product,
       cost: r.cost_amount,
       desc: `${r.product} ${r.local_currency}`,
+      cost_amount: r.cost_amount,
+      cost_currency: r.cost_currency,
     }));
 }
 
