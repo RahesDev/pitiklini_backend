@@ -48,6 +48,7 @@ const AirdropDistribution = require("../schema/AirdropDistribution");
 const UserReward = require("../schema/UserRewardMangement");
 const transferDB = require("../schema/internalTransfer");
 const contact = require("../schema/contact");
+const { UserNewclient } = require("../redis-helper/userRedis");
 
 const bankdb = require("../schema/bankdetails");
 const subscriberDB = require("../schema/subscriber");
@@ -84,6 +85,8 @@ const {  btcdeposit } = require("./depositNew");
 const saltRounds = 12;
 const userRedis = require("../redis-helper/userRedis");
 var paymentMethod = require("../schema/paymentMethod");
+const vipManagement = require("../schema/vipManagement");
+const vipUserDB = require("../schema/vipUser");
 
 const { getOperators, getPlans } = require("../utils/topupLoader");
 const qs = require("qs");
@@ -13333,6 +13336,215 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
 //     res.json({ status: false, message: "Internal error" });
 //   }
 // });
+
+router.get("/getVipDatas", async (req, res) => {
+  try {
+    let data = await vipManagement.findOne().lean();
+
+    if (!data) {
+      return res.json({ status: true, vipDatas: { USDT: 0, PTK: 0 } });
+    }
+
+    delete data._id;
+    delete data.updatedAt;
+
+    return res.json({
+      status: true,
+      vipDatas: data ? data : { USDT: 0, PTK: 0 },
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Something went wrong" });
+  }
+});
+
+router.get("/getVipUserDetail", common.tokenmiddleware, async (req, res) => {
+   try {
+     const userId = req.userId;
+
+     const vip = await vipUserDB.findOne({
+       userId,
+       status: "active",
+     });
+
+     if (!vip) {
+       return res.json({
+         status: true,
+         PhishinStatus: "false",
+       });
+     }
+
+     // Calculate days since activation
+     const now = new Date();
+     const diffInMs = now - vip.date;
+     const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+
+     if (diffInDays > 30) {
+       // Auto expire
+       vip.status = "deactive";
+       await vip.save();
+
+       // ⭐ ALSO SET vipBadge = false in usersDB
+       const updatedUser = await usersDB.findOneAndUpdate(
+         { _id: userId },
+         {
+           $set: {
+             vipBadge: false,
+             modifiedDate: Date.now(),
+           },
+         },
+         { new: true }
+       );
+
+       if (updatedUser) {
+         // ⭐ clear redis
+         await UserNewclient.hdel("getUser", userId.toString());
+         userRedis.getUser(userId, () => {});
+       }
+
+       return res.json({
+         status: true,
+         PhishinStatus: "false",
+       });
+     }
+
+      if (diffInDays >= 29 && diffInDays < 30) {
+        // Prevent sending email repeatedly
+        if (!vip.reminderSent) {
+          // Fetch user to get email
+          const findUser = await usersDB.findOne({ _id: userId });
+          if (findUser) {
+            const userMail = common.decrypt(findUser.email);
+
+            // Fetch email template from DB
+            const temp = await mailtempDB.findOne({
+              key: "VIP_EXPIRY_REMINDER",
+            });
+
+            if (temp) {
+              const mailBody = temp.body
+                .replace(/###USERNAME###/g, userMail)
+                .replace(
+                  /###EXPIRYDATE###/g,
+                  vip.date.toISOString().slice(0, 10)
+                )
+                .replace(/###DAYSLEFT###/g, "1");
+
+              // Send email
+              await mail.sendMail({
+                from: {
+                  name: process.env.FROM_NAME,
+                  address: process.env.FROM_EMAIL,
+                },
+                to: userMail,
+                subject: temp.Subject || "Your VIP Membership Will Expire Soon",
+                html: mailBody,
+              });
+            }
+          }
+
+          // Mark reminder as sent
+          vip.reminderSent = true;
+          await vip.save();
+        }
+      }
+
+
+     // Still valid
+     return res.json({
+       status: true,
+       PhishinStatus: "true",
+     });
+   } catch (err) {
+     console.log(err);
+     return res.json({ status: false, message: "Server Error" });
+   }
+});
+
+router.post("/enableVipUser", common.tokenmiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { currency, amount } = req.body;
+
+    if (!currency || !amount) {
+      return res.json({ status: false, message: "All fields required" });
+    }
+
+    // Get user wallet
+    const wallet = await userWalletDB.findOne({ userId: userId });
+    if (!wallet) {
+      return res.json({ status: false, message: "Wallet not found" });
+    }
+
+    // Find correct wallet item
+    const userCurrencyWallet = wallet.wallets.find(
+      (item) => item.currencySymbol === currency
+    );
+
+    if (!userCurrencyWallet) {
+      return res.json({
+        status: false,
+        message: `No wallet found for ${currency}`,
+      });
+    }
+
+    // Check balance
+    if (Number(userCurrencyWallet.amount) < Number(amount)) {
+      return res.json({
+        status: false,
+        message: "Insufficient balance",
+      });
+    }
+
+    // Deduct amount
+    userCurrencyWallet.amount =
+      Number(userCurrencyWallet.amount) - Number(amount);
+
+    await wallet.save();
+
+    // Save VIP activation entry
+    await vipUserDB.create({
+      userId,
+      currency,
+      amount,
+      status: "active",
+      date: new Date(),
+    });
+
+    const updatedUser = await usersDB.findOneAndUpdate(
+      { _id: userId },
+      {
+        $set: {
+          vipBadge: true,
+          modifiedDate: Date.now(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.json({
+        status: false,
+        message: "Failed to update VIP Badge status",
+      });
+    }
+
+    // ⭐ CLEAR REDIS OLD CACHE
+    await UserNewclient.hdel("getUser", userId.toString());
+
+    // ⭐ RELOAD user into redis
+    userRedis.getUser(userId, function (datas) {
+
+      return res.json({
+        status: true,
+        message: "VIP Activated Successfully",
+      });
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Server error" });
+  }
+});
 
 
 

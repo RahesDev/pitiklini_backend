@@ -68,6 +68,7 @@ const saltRounds = 12;
 const axios = require('axios');
 var paymentMethod = require("../schema/paymentMethod");
 var p2pdispute = require("../schema/p2pdispute");
+const vipManagement = require("../schema/vipManagement");
 
 // Rate limiting middleware
 const loginLimiter = rateLimit({
@@ -7033,6 +7034,105 @@ router.post("/release_coin", common.tokenmiddleware, async (req, res) => {
       status: false,
       message: "Something Went Wrong. Please Try Again later",
     });
+  }
+});
+
+// GET VIP DATA
+router.get("/getVipDatas", async (req, res) => {
+  try {
+    let data = await vipManagement.findOne().lean();
+
+    if (!data) {
+      return res.json({ status: true, vipDatas: { USDT: 0, PTK: 0 } });
+    }
+
+    delete data._id;
+    delete data.updatedAt;
+
+    return res.json({
+      status: true,
+      vipDatas: data ? data : { USDT: 0, PTK: 0 }
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Something went wrong" });
+  }
+});
+
+router.post("/getUSDTtoPTK", async (req, res) => {
+  try {
+    await common.currency_conversion(async function (response) {
+      if (!response.status) {
+        return res.json({ status: false, message: "Conversion fetch failed" });
+      }
+
+      let allPair = response.message;
+      allPair = fillReverseConversions(allPair);
+
+      if (!allPair["USDT"] || !allPair["USDT"]["PTK"]) {
+        return res.json({ status: false, message: "PTK rate not found" });
+      }
+
+      const rate = Number(allPair["USDT"]["PTK"]);
+
+      return res.json({
+        status: true,
+        rate: rate,
+      });
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Server error" });
+  }
+});
+function fillReverseConversions(finalRates) {
+  const currencies = Object.keys(finalRates);
+
+  currencies.forEach((base) => {
+    currencies.forEach((target) => {
+      if (base === target) return;
+
+      // base → target missing, but reverse exists
+      if (
+        finalRates[base][target] === undefined &&
+        finalRates[target] &&
+        finalRates[target][base] !== undefined
+      ) {
+        const reverseRate = finalRates[target][base];
+
+        if (reverseRate > 0) {
+          finalRates[base][target] = Number((1 / reverseRate).toFixed(8));
+        }
+      }
+    });
+  });
+
+  return finalRates;
+}
+
+// ADD OR UPDATE VIP DATA
+router.post("/saveVipDatas", async (req, res) => {
+  try {
+    const { USDT, PTK } = req.body;
+
+    let exist = await vipManagement.findOne();
+
+    if (!exist) {
+      await vipManagement.create({ USDT, PTK });
+    } else {
+      exist.USDT = USDT;
+      exist.PTK = PTK;
+      exist.updatedAt = Date.now();
+      await exist.save();
+    }
+
+    return res.json({
+      status: true,
+      message: "VIP settings saved successfully"
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Something went wrong" });
   }
 });
 
