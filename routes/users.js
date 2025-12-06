@@ -13106,7 +13106,8 @@ router.post("/get_plan_list", common.tokenmiddleware, async (req, res) => {
 
 router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
   try {
-    const { number, operatorCode, planId, cost_amount } = req.body;
+    const { number, operatorCode, planId, cost_amount, selectedCurrency } =
+      req.body;
     const userId = req.userId;
 
     if (!number || !operatorCode || !planId ) {
@@ -13116,32 +13117,39 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
       });
     }
 
+    if (!selectedCurrency) {
+      return res.json({ status: false, message: "Currency is required" });
+    }
+
      const wallet = await userWalletDB.findOne({ userId });
      if (!wallet) {
        return res.json({ status: false, message: "Wallet not found!" });
      }
 
-    const usdtWallet = wallet.wallets.find((w) => w.currencySymbol === "USDT");
-        if (!usdtWallet) {
+    // const usdtWallet = wallet.wallets.find((w) => w.currencySymbol === "USDT");
+    const userWallet = wallet.wallets.find(
+      (w) => w.currencySymbol === selectedCurrency
+    );
+        if (!userWallet) {
           return res.json({
             status: false,
-            message: "USDT Wallet not found!",
+            message: `${selectedCurrency} Wallet not found!`,
           });
         }
     
-    if (usdtWallet.amount < cost_amount) {
+    if (userWallet.amount < cost_amount) {
       return res.json({
         status: false,
-        message: "Insufficient USDT balance!",
+        message: `Insufficient ${selectedCurrency} balance!`,
       });
     }
 
     // 3. DEDUCT WALLET BEFORE RECHARGE
-    usdtWallet.amount -= Number(cost_amount);
+    userWallet.amount -= Number(cost_amount);
     await wallet.save();
 
      console.log(
-       `Wallet Deducted: ${cost_amount} USDT | New Balance: ${usdtWallet.amount}`
+       `Wallet Deducted: ${cost_amount} ${selectedCurrency} | New Balance: ${userWallet.amount}`
      );
 
     // Prepare the body for Innoverit
@@ -13184,11 +13192,11 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
     //   response.data.status === "SUCCESS" ? "SUCCESS" : "FAILED";
 
         if (rechargeStatus === "FAILED") {
-          usdtWallet.amount += Number(cost_amount); // refund
+          userWallet.amount += Number(cost_amount); // refund
           await wallet.save();
 
           console.log(
-            `Recharge failed. Refunded: ${cost_amount} USDT | Balance Restored: ${usdtWallet.amount}`
+            `Recharge failed. Refunded: ${cost_amount} ${selectedCurrency} | Balance Restored: ${userWallet.amount}`
           );
         }
 
@@ -13199,6 +13207,7 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
       operatorCode,
       planId,
       amount: cost_amount,
+      currency: selectedCurrency,
       transactionId: apiData.recharge_id || "",
       status: rechargeStatus,
       date: new Date(),
@@ -13209,9 +13218,10 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
         status: true,
         message: "Recharge Successful",
         txnId: apiData.recharge_id,
-        balance: apiData.balance,
-        destination: apiData.destination,
+        // balance: apiData.balance,
+        // destination: apiData.destination,
         amount: cost_amount,
+        currency: selectedCurrency,
       });
     } else {
       return res.json({

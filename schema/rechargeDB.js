@@ -5,6 +5,7 @@ const rechargeSchema = new mongoose.Schema({
   number: String,
   operatorCode: String,
   planId: String,
+  currency: String,
   amount: Number,
   transactionId: String,
   status: String,
