@@ -13368,107 +13368,230 @@ router.get("/getVipDatas", async (req, res) => {
   }
 });
 
+// router.get("/getVipUserDetail", common.tokenmiddleware, async (req, res) => {
+//    try {
+//      const userId = req.userId;
+
+//      const vip = await vipUserDB.findOne({
+//        userId,
+//        status: "active",
+//      });
+
+//      if (!vip) {
+//        return res.json({
+//          status: true,
+//          PhishinStatus: "false",
+//        });
+//      }
+
+//      // Calculate days since activation
+//      const now = new Date();
+//      const diffInMs = now - vip.date;
+//      const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+
+//      if (diffInDays > 30) {
+//        // Auto expire
+//        vip.status = "deactive";
+//        await vip.save();
+
+//        // ⭐ ALSO SET vipBadge = false in usersDB
+//        const updatedUser = await usersDB.findOneAndUpdate(
+//          { _id: userId },
+//          {
+//            $set: {
+//              vipBadge: false,
+//              modifiedDate: Date.now(),
+//            },
+//          },
+//          { new: true }
+//        );
+
+//        if (updatedUser) {
+//          // ⭐ clear redis
+//          await UserNewclient.hdel("getUser", userId.toString());
+//          userRedis.getUser(userId, () => {});
+//        }
+
+//        return res.json({
+//          status: true,
+//          PhishinStatus: "false",
+//        });
+//      }
+
+//       if (diffInDays >= 29 && diffInDays < 30) {
+//         // Prevent sending email repeatedly
+//         if (!vip.reminderSent) {
+//           // Fetch user to get email
+//           const findUser = await usersDB.findOne({ _id: userId });
+//           if (findUser) {
+//             const userMail = common.decrypt(findUser.email);
+
+//             // Fetch email template from DB
+//             const temp = await mailtempDB.findOne({
+//               key: "VIP_EXPIRY_REMINDER",
+//             });
+
+//             if (temp) {
+//               const mailBody = temp.body
+//                 .replace(/###USERNAME###/g, userMail)
+//                 .replace(
+//                   /###EXPIRYDATE###/g,
+//                   vip.date.toISOString().slice(0, 10)
+//                 )
+//                 .replace(/###DAYSLEFT###/g, "1");
+
+//               // Send email
+//               await mail.sendMail({
+//                 from: {
+//                   name: process.env.FROM_NAME,
+//                   address: process.env.FROM_EMAIL,
+//                 },
+//                 to: userMail,
+//                 subject: temp.Subject || "Your VIP Membership Will Expire Soon",
+//                 html: mailBody,
+//               });
+//             }
+//           }
+
+//           // Mark reminder as sent
+//           vip.reminderSent = true;
+//           await vip.save();
+//         }
+//       }
+
+
+//      // Still valid
+//      return res.json({
+//        status: true,
+//        PhishinStatus: "true",
+//      });
+//    } catch (err) {
+//      console.log(err);
+//      return res.json({ status: false, message: "Server Error" });
+//    }
+// });
+
 router.get("/getVipUserDetail", common.tokenmiddleware, async (req, res) => {
-   try {
-     const userId = req.userId;
+  try {
+    const userId = req.userId;
 
-     const vip = await vipUserDB.findOne({
-       userId,
-       status: "active",
-     });
+    const vip = await vipUserDB.findOne({ userId, status: "active" });
 
-     if (!vip) {
-       return res.json({
-         status: true,
-         PhishinStatus: "false",
-       });
-     }
+    if (!vip) {
+      return res.json({ status: true, PhishinStatus: "false" });
+    }
 
-     // Calculate days since activation
-     const now = new Date();
-     const diffInMs = now - vip.date;
-     const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+    const now = new Date();
+    const diffInMs = now - vip.date;
+    const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
 
-     if (diffInDays > 30) {
-       // Auto expire
-       vip.status = "deactive";
-       await vip.save();
+    const vipAmount = vip.amount;
+    const vipCurrency = vip.currency;
 
-       // ⭐ ALSO SET vipBadge = false in usersDB
-       const updatedUser = await usersDB.findOneAndUpdate(
-         { _id: userId },
-         {
-           $set: {
-             vipBadge: false,
-             modifiedDate: Date.now(),
-           },
-         },
-         { new: true }
-       );
+    const wallet = await userWalletDB.findOne({ userId });
+    const userWallet = wallet?.wallets?.find(
+      (w) => w.currencySymbol === vipCurrency
+    );
 
-       if (updatedUser) {
-         // ⭐ clear redis
-         await UserNewclient.hdel("getUser", userId.toString());
-         userRedis.getUser(userId, () => {});
-       }
+    // (A) AUTO RENEW ON DAY 30
+    if (diffInDays >= 30 && diffInDays < 31) {
+      if (!vip.renewAttempted) {
+        if (userWallet?.amount >= vipAmount) {
+          // SUCCESS AUTO-DEBIT
+          userWallet.amount -= vipAmount;
+          await wallet.save();
 
-       return res.json({
-         status: true,
-         PhishinStatus: "false",
-       });
-     }
+          vip.date = now;
+          vip.renewAttempted = false;
+          vip.reminderSent = false;
+          await vip.save();
 
-      if (diffInDays >= 29 && diffInDays < 30) {
-        // Prevent sending email repeatedly
-        if (!vip.reminderSent) {
-          // Fetch user to get email
-          const findUser = await usersDB.findOne({ _id: userId });
-          if (findUser) {
+          return res.json({
+            status: true,
+            PhishinStatus: "true",
+            message: "VIP auto-renewed successfully",
+          });
+        } else {
+          // SEND EMAIL ONLY ONCE
+          if (!vip.reminderSent) {
+            const findUser = await usersDB.findOne({ _id: userId });
             const userMail = common.decrypt(findUser.email);
 
-            // Fetch email template from DB
             const temp = await mailtempDB.findOne({
-              key: "VIP_EXPIRY_REMINDER",
+              key: "VIP_INSUFFICIENT_BALANCE",
             });
 
             if (temp) {
               const mailBody = temp.body
                 .replace(/###USERNAME###/g, userMail)
-                .replace(
-                  /###EXPIRYDATE###/g,
-                  vip.date.toISOString().slice(0, 10)
-                )
-                .replace(/###DAYSLEFT###/g, "1");
+                .replace(/###AMOUNT###/g, vipAmount)
+                .replace(/###CURRENCY###/g, vipCurrency);
 
-              // Send email
               await mail.sendMail({
                 from: {
                   name: process.env.FROM_NAME,
                   address: process.env.FROM_EMAIL,
                 },
                 to: userMail,
-                subject: temp.Subject || "Your VIP Membership Will Expire Soon",
+                subject:
+                  temp.Subject || "VIP Renewal Failed - Insufficient Balance",
                 html: mailBody,
               });
             }
+
+            vip.reminderSent = true;
+            await vip.save();
           }
 
-          // Mark reminder as sent
-          vip.reminderSent = true;
+          vip.renewAttempted = true;
           await vip.save();
         }
       }
+    }
 
+    // (B) AFTER EMAIL SENT (BETWEEN DAY 30 & DAY 31)
+    // USER DEPOSITS → CHECK BALANCE & AUTO-DEBIT IMMEDIATELY
+    if (vip.reminderSent === true && diffInDays < 31) {
+      if (userWallet && userWallet.amount >= vipAmount) {
 
-     // Still valid
-     return res.json({
-       status: true,
-       PhishinStatus: "true",
-     });
-   } catch (err) {
-     console.log(err);
-     return res.json({ status: false, message: "Server Error" });
-   }
+        userWallet.amount -= vipAmount;
+        await wallet.save();
+
+        vip.date = now; // reset cycle
+        vip.renewAttempted = false;
+        vip.reminderSent = false;
+        await vip.save();
+
+        return res.json({
+          status: true,
+          PhishinStatus: "true",
+          message: "VIP renewed after deposit",
+        });
+      }
+    }
+
+    // (C) DAY 31 → FINAL DEACTIVATE
+    if (diffInDays >= 31) {
+      if (vip.reminderSent === true) {
+        vip.status = "deactive";
+        await vip.save();
+
+        return res.json({
+          status: true,
+          PhishinStatus: "false",
+          message: "VIP deactivated due to non-payment",
+        });
+      }
+    }
+
+    return res.json({
+      status: true,
+      PhishinStatus: "true",
+    });
+  } catch (err) {
+    console.log(err);
+    return res.json({ status: false, message: "Server Error" });
+  }
 });
 
 router.post("/enableVipUser", common.tokenmiddleware, async (req, res) => {
