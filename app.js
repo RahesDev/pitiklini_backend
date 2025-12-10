@@ -138,7 +138,8 @@ app.use("/callp2p", mobileP2pRouter);
 
 const { startSocket } = require("./services/socket/socket");
 
-app.use("/trade", trade);
+// app.use("/trade", trade);
+app.use("/tradeapi", trade);
 
 // loadTopupCSV();
 loadTopupCSV().then(() => {
