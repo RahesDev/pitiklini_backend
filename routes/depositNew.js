@@ -12,6 +12,27 @@ const { seterc20Token, settrc20Token, setbep20Token } = require("../redis-helper
 const usersDB = require("../schema/users");
 const common = require("../helper/common");
 const userCryptoAddress = require("../schema/userCryptoAddress");
+const depositScanDB = require("../schema/depositScanDB");
+const DEEP_SCAN_BLOCKS = 28800; // ~20 days
+const CONFIRMATIONS = 3;
+const LOG_STEP = 500; 
+const BNB_LOG_STEP = 500;
+
+const Web3 = require("web3");
+const web3 = new Web3(process.env.BSC_RPC);
+
+const ERC20_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "from", type: "address" },
+      { indexed: true, name: "to", type: "address" },
+      { indexed: false, name: "value", type: "uint256" },
+    ],
+    name: "Transfer",
+    type: "event",
+  },
+];
 
 //BTC DEPOSIT FUNCION 
 const btcdeposit =async function (address, userId, currencySymbol, currency) {
@@ -221,96 +242,223 @@ const ethdeposit = async function (address, userId, currencySymbol, currency, ad
 };
 
 //BNB DEPOSIT FUNCION 
-const bnbdeposit =async function (address, userId, currencySymbol, currency, admin_address) {
-  try {
-    var currency_find= await currencyDB.findOne({_id:currency});
-    // const url = `https://${process.env.BSC_API}/api?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
-    // const response = await axios.get(url);
-    const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
-    // const response = await axios.get(url, {
-    //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
-    //   // params: { limit: 100 }, // optional
-    // });
-    // const responseTxn = response.data.result;
-    const response = await axios.get(url);
-    const data = response.data;
-    console.log("bnb chain transactions ===", data);
-    // if(responseTxn.length > 0 && typeof responseTxn == "object")
-    // {
+// const bnbdeposit =async function (address, userId, currencySymbol, currency, admin_address) {
+//   try {
+//     var currency_find= await currencyDB.findOne({_id:currency});
+//     // const url = `https://${process.env.BSC_API}/api?module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
+//     // const response = await axios.get(url);
+//     const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=txlist&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+//     // const response = await axios.get(url, {
+//     //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
+//     //   // params: { limit: 100 }, // optional
+//     // });
+//     // const responseTxn = response.data.result;
+//     const response = await axios.get(url);
+//     const data = response.data;
+//     console.log("bnb chain transactions ===", data);
+//     // if(responseTxn.length > 0 && typeof responseTxn == "object")
+//     // {
 
-     if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
-     const responseTxn = data.result;
+//      if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
+//      const responseTxn = data.result;
 
-     await Promise.allSettled(responseTxn.map(async (tx) => {
-       if(tx.to?.toLowerCase() == address.toLowerCase())
-       {
-       const fromAddress = tx.from?.toLowerCase();
-       admin_address = admin_address.toLowerCase();
-       if(fromAddress != admin_address)
-       {
-        const existingDeposita = await depositDB.findOne({ txnid: tx.hash }).exec();
+//      await Promise.allSettled(responseTxn.map(async (tx) => {
+//        if(tx.to?.toLowerCase() == address.toLowerCase())
+//        {
+//        const fromAddress = tx.from?.toLowerCase();
+//        admin_address = admin_address.toLowerCase();
+//        if(fromAddress != admin_address)
+//        {
+//         const existingDeposita = await depositDB.findOne({ txnid: tx.hash }).exec();
 
-       let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
+//        let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
 
-       if (!existingDeposita) {
-        const depamt = tx.value/Math.pow(10, currency_find.coinDecimal_bep20? currency_find.coinDecimal_bep20:"18"); // Convert Wei to ETH
-           const create_deposit_obj = {
-               userId: userId,
-               currency: currency,
-               currencySymbol: currencySymbol,
-               depamt: parseFloat(depamt),
-               depto: address,
-               txnid: tx.hash,
-               currencyMoveStatus:0,
-               createdDate :new Date(),
-               modifiedDate:new Date(),
-           };
-           const create_deposit = await depositDB.create(create_deposit_obj).then((res)=>console.log(res)).catch((err)=>console.log(err));
+//        if (!existingDeposita) {
+//         const depamt = tx.value/Math.pow(10, currency_find.coinDecimal_bep20? currency_find.coinDecimal_bep20:"18"); // Convert Wei to ETH
+//            const create_deposit_obj = {
+//                userId: userId,
+//                currency: currency,
+//                currencySymbol: currencySymbol,
+//                depamt: parseFloat(depamt),
+//                depto: address,
+//                txnid: tx.hash,
+//                currencyMoveStatus:0,
+//                createdDate :new Date(),
+//                modifiedDate:new Date(),
+//            };
+//            const create_deposit = await depositDB.create(create_deposit_obj).then((res)=>console.log(res)).catch((err)=>console.log(err));
 
-           if(address_detail.type == 1){
-            const userWallet = await adminWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
-            if (userWallet) {
-                 const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-            if (walletIndex !== -1) {
-                 userWallet.wallets[walletIndex].amount += depamt;
-                 await userWallet.save();
-                // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
+//            if(address_detail.type == 1){
+//             const userWallet = await adminWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+//             if (userWallet) {
+//                  const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
+//             if (walletIndex !== -1) {
+//                  userWallet.wallets[walletIndex].amount += depamt;
+//                  await userWallet.save();
+//                 // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
 
-            } else {
-                // console.log(`Currency not found in wallet for user ${userId}`);
-                 }
-           } else {
-                 //console.log(`Wallet not found for user ${userId}`);
-           }
-          }
-          else
-          {
-          const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
-          if (userWallet) {
-                const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-          if (walletIndex !== -1) {
-                userWallet.wallets[walletIndex].amount += depamt;
-                await userWallet.save();
-               // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
-              await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate); // Similar to ETH transfers
+//             } else {
+//                 // console.log(`Currency not found in wallet for user ${userId}`);
+//                  }
+//            } else {
+//                  //console.log(`Wallet not found for user ${userId}`);
+//            }
+//           }
+//           else
+//           {
+//           const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+//           if (userWallet) {
+//                 const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
+//           if (walletIndex !== -1) {
+//                 userWallet.wallets[walletIndex].amount += depamt;
+//                 await userWallet.save();
+//                // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
+//               await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate); // Similar to ETH transfers
 
-          } else {
-               // console.log(`Currency not found in wallet for user ${userId}`);
-                }
-          } else {
-               // console.log(`Wallet not found for user ${userId}`);
-          }
-         }
-       } 
-       }
-       }
-      }));
-    // }
+//           } else {
+//                // console.log(`Currency not found in wallet for user ${userId}`);
+//                 }
+//           } else {
+//                // console.log(`Wallet not found for user ${userId}`);
+//           }
+//          }
+//        } 
+//        }
+//        }
+//       }));
+//     // }
     
-   } catch (err) {
-       console.log(err, "error");
-   }
+//    } catch (err) {
+//        console.log(err, "error");
+//    }
+// };
+
+//BNB DEPOSIT FUNCION 
+const bnbdeposit = async (
+  address,
+  userId,
+  currencySymbol,
+  currency,
+  admin_address
+) => {
+  try {
+    address = address.toLowerCase();
+    admin_address = admin_address?.toLowerCase();
+
+    const latestBlock = await web3.eth.getBlockNumber();
+    const safeBlock = latestBlock - CONFIRMATIONS;
+
+    const scanData = await depositScanDB.findOne({
+      userId,
+      address,
+      tokenContract: "BNB",
+    });
+
+    const startBlock = scanData
+      ? scanData.lastScannedBlock + 1
+      : Math.max(safeBlock - DEEP_SCAN_BLOCKS, 0);
+
+    if (startBlock > safeBlock) return;
+
+    let lastProcessedBlock = startBlock;
+
+    for (
+      let fromBlock = startBlock;
+      fromBlock <= safeBlock;
+      fromBlock += BNB_LOG_STEP
+    ) {
+      const toBlock = Math.min(fromBlock + BNB_LOG_STEP - 1, safeBlock);
+
+      const logs = await web3.eth.getPastLogs({
+        fromBlock,
+        toBlock,
+        topics: [null, null, web3.utils.padLeft(address, 64)],
+      });
+
+      for (const log of logs) {
+        const txHash = log.transactionHash;
+
+        const exists = await depositDB.findOne({ txnid: txHash });
+        if (exists) continue;
+
+        const tx = await web3.eth.getTransaction(txHash);
+        if (!tx || !tx.value) continue;
+
+        if (tx.from?.toLowerCase() === admin_address) continue;
+
+        const depamt = Number(
+          web3.utils.fromWei(web3.utils.toBN(tx.value), "ether")
+        );
+
+        if (depamt <= 0) continue;
+
+        const depositObj = {
+          userId,
+          currency,
+          currencySymbol,
+          depamt,
+          depto: address,
+          txnid: txHash,
+          network: "BEP20",
+          currencyMoveStatus: 0,
+          createddate: new Date(),
+          updateddate: new Date(),
+        };
+
+        await depositDB.create(depositObj);
+
+        const addrDetail = await userCryptoAddress.findOne({ address });
+        const WalletModel =
+          addrDetail?.type === 1 ? adminWalletDB : userWalletDB;
+
+        const wallet = await WalletModel.findOne({
+          userId,
+          "wallets.currencyId": currency,
+        });
+
+        if (!wallet) continue;
+
+        const idx = wallet.wallets.findIndex((w) =>
+          w.currencyId.equals(currency)
+        );
+
+        if (idx === -1) continue;
+
+        wallet.wallets[idx].amount += depamt;
+        await wallet.save();
+
+        if (addrDetail?.type !== 1) {
+          await email_function(
+            userId,
+            currencySymbol,
+            txHash,
+            depamt,
+            wallet.wallets[idx].amount,
+            depositObj.createddate,
+            "BNB"
+          );
+        }
+
+        lastProcessedBlock = log.blockNumber;
+      }
+    }
+
+    await depositScanDB.updateOne(
+      { userId, address, tokenContract: "BNB" },
+      {
+        $set: {
+          lastScannedBlock: lastProcessedBlock,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error("🔥 BNB scan error:", err);
+  }
 };
+
+
 
 //BNB TOKEN DEPPOSIT FUNCTION
 const processBep20Data = (response, address, userId) => {
@@ -318,7 +466,7 @@ const processBep20Data = (response, address, userId) => {
     if (response && response.length > 0) {
       response.forEach((item, index) => {
         const { contractAddress_bep20: contractAddress, coinDecimal_bep20: decimal } = item;
-        // console.log("contractAddress--->>",contractAddress,"decimal-->>",decimal);
+        console.log("contractAddress--->>",contractAddress,"decimal-->>",decimal);
         if (contractAddress) {
           bnbtokendeposit(address, userId, item.currencySymbol, item._id, contractAddress, item.coinDecimal_bep20);
         }
@@ -358,95 +506,491 @@ const get_bnb_token = async function (userId, address) {
   }
 }
 
-const bnbtokendeposit = async function (address, userId, currencySymbol, currency, tokenContractAddress,decimal) {
-  try{
-    // const url = `https://${process.env.BSC_API}/api?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
-    // const response = await axios.get(url);
-    const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
-    // const response = await axios.get(url, {
-    //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
-    //   // params: { limit: 100 },
-    // });
+// const bnbtokendeposit = async function (address, userId, currencySymbol, currency, tokenContractAddress,decimal) {
+//   try{
+//     // const url = `https://${process.env.BSC_API}/api?module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.BSCTOKEN}`;
+//     // const response = await axios.get(url);
+//     const url = `https://${process.env.ETH_API}/api?chainid=56&module=account&action=tokentx&contractaddress=${tokenContractAddress}&address=${address}&endblock=latest&apikey=${process.env.ETHKEY}`;
+//     // const response = await axios.get(url, {
+//     //   headers: { Authorization: `Bearer ${process.env.BSCTOKEN}` },
+//     //   // params: { limit: 100 },
+//     // });
 
-    // const responseTxn = response.data.result;
-    // if(responseTxn.length > 0 && typeof responseTxn == "object")
-    // {
-const response = await axios.get(url);
-    const data = response.data;
-     console.log("bnb token transactions ===", data);
-        if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
-        const responseTxn = data.result;
+//     // const responseTxn = response.data.result;
+//     // if(responseTxn.length > 0 && typeof responseTxn == "object")
+//     // {
+//     console.log("bnb url for tnx ===", url);
+//     const response = await axios.get(url);
+//     console.log("bnb response from url ===", response);
+//     const data = response.data;
+//      console.log("bnb token transactions ===", data);
+//         if (!data || data.status !== "1" || !Array.isArray(data.result)) return;
+//         const responseTxn = data.result;
 
-      await Promise.allSettled(responseTxn.map(async (tx) => {
-        try{
-          if(tx.to?.toLowerCase() == address.toLowerCase())
-          {
-            const existingDeposit = await depositDB.findOne({ txnid: tx.hash }).exec();
-            let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
-            if (!existingDeposit || existingDeposit==null) {
-              const depamt = tx.value/Math.pow(10, decimal); // Convert Wei to ETH
-              const create_deposit_obj = {
-                  userId: userId,
-                  currency: currency,
-                  currencySymbol: currencySymbol,
-                  depamt: parseFloat(depamt),
-                  network:"BEP20",
-                  depto: address,
-                  txnid: tx.hash,
-                  currencyMoveStatus:0,
-                  createdDate :new Date(),
-                  modifiedDate:new Date(),
-              };
-              const create_deposit = await depositDB.create(create_deposit_obj);
-              if(address_detail.type == 1){
-                const userWallet = await adminWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
-                if (userWallet) {
-                      const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-                if (walletIndex !== -1) {
-                      userWallet.wallets[walletIndex].amount += depamt;
-                      await userWallet.save();
-                    // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
+//       await Promise.allSettled(responseTxn.map(async (tx) => {
+//         try{
+//           if(tx.to?.toLowerCase() == address.toLowerCase())
+//           {
+//             const existingDeposit = await depositDB.findOne({ txnid: tx.hash }).exec();
+//             let address_detail = await userCryptoAddress.findOne({address:address}).collation({ locale: 'en', strength: 2 });
+//             if (!existingDeposit || existingDeposit==null) {
+//               const depamt = tx.value/Math.pow(10, decimal); // Convert Wei to ETH
+//               const create_deposit_obj = {
+//                   userId: userId,
+//                   currency: currency,
+//                   currencySymbol: currencySymbol,
+//                   depamt: parseFloat(depamt),
+//                   network:"BEP20",
+//                   depto: address,
+//                   txnid: tx.hash,
+//                   currencyMoveStatus:0,
+//                   createdDate :new Date(),
+//                   modifiedDate:new Date(),
+//               };
+//               const create_deposit = await depositDB.create(create_deposit_obj);
+//               if(address_detail.type == 1){
+//                 const userWallet = await adminWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+//                 if (userWallet) {
+//                       const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
+//                 if (walletIndex !== -1) {
+//                       userWallet.wallets[walletIndex].amount += depamt;
+//                       await userWallet.save();
+//                     // console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
       
-                } else {
-                    // console.log(`Currency not found in wallet for user ${userId}`);
-                      }
-                } else {
-                    // console.log(`Wallet not found for user ${userId}`);
-                }
-              }else{
-                const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
-                console.log("-----userwallet bnbtoken comes-----")
-            if (userWallet) {
-              const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
-              console.log("-----walletIndex bnbtoken-----", walletIndex);
-              if (walletIndex !== -1) {
-              console.log("-----walletIndex bnbtoken -111111 -----");
-                userWallet.wallets[walletIndex].amount += depamt;
-                await userWallet.save();
-                console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
-                await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate,"BEP20"); // Similar to ETH transfers
+//                 } else {
+//                     // console.log(`Currency not found in wallet for user ${userId}`);
+//                       }
+//                 } else {
+//                     // console.log(`Wallet not found for user ${userId}`);
+//                 }
+//               }else{
+//                 const userWallet = await userWalletDB.findOne({ userId: userId, 'wallets.currencyId': currency });
+//                 console.log("-----userwallet bnbtoken comes-----")
+//             if (userWallet) {
+//               const walletIndex = userWallet.wallets.findIndex(w => w.currencyId.equals(currency));
+//               console.log("-----walletIndex bnbtoken-----", walletIndex);
+//               if (walletIndex !== -1) {
+//               console.log("-----walletIndex bnbtoken -111111 -----");
+//                 userWallet.wallets[walletIndex].amount += depamt;
+//                 await userWallet.save();
+//                 console.log(`Updated balance for user ${userId}: ${userWallet.wallets[walletIndex].amount}`);
+//                 await email_function(create_deposit_obj.userId,create_deposit_obj.currencySymbol,create_deposit_obj.txnid,create_deposit_obj.depamt,userWallet.wallets[walletIndex].amount,create_deposit_obj.createdDate,"BEP20"); // Similar to ETH transfers
       
-            } else {
-                // console.log(`Currency not found in wallet for user ${userId}`);
-                }
-          } else {
-                // console.log(`Wallet not found for user ${userId}`);
-          }
+//             } else {
+//                 // console.log(`Currency not found in wallet for user ${userId}`);
+//                 }
+//           } else {
+//                 // console.log(`Wallet not found for user ${userId}`);
+//           }
+//         }
+//             }
+//          }
+//         }catch(Err){
+//          //console.log(Err);
+//         }
+//          }));
+//     // }
+//   }
+//   catch(err){
+//     console.log(err,"=-=-=-=")
+//   }
+// };
+
+//ETH TOKEN DEPPOSIT FUNCTION
+
+// const bnbtokendeposit = async function (
+//   address,
+//   userId,
+//   currencySymbol,
+//   currency,
+//   tokenContractAddress,
+//   decimal
+// ) {
+//   try {
+//     console.log(
+//       "=-=-=-=-=-=-=-=-",
+//       address,
+//       userId,
+//       currencySymbol,
+//       currency,
+//       tokenContractAddress,
+//       decimal
+//     );
+//     const contract = new web3.eth.Contract(ERC20_ABI, tokenContractAddress);
+
+//     const latestBlock = await web3.eth.getBlockNumber();
+
+//     // scan last 500 blocks
+//     const startBlock = Math.max(latestBlock - 500, 0);
+//     const STEP = 50;
+
+//     console.log("🔍 Scanning blocks:", startBlock, "→", latestBlock);
+
+//     for (
+//       let fromBlock = startBlock;
+//       fromBlock <= latestBlock;
+//       fromBlock += STEP
+//     ) {
+//       const toBlock = Math.min(fromBlock + STEP - 1, latestBlock);
+
+//       try {
+//         const events = await contract.getPastEvents("Transfer", {
+//           filter: { to: address }, // ✅ filter only deposits to user
+//           fromBlock,
+//           toBlock,
+//         });
+//         console.log("new bnd events ===>", events);
+
+//         await Promise.allSettled(
+//           events.map(async (event) => {
+//             try {
+//               const { to, value } = event.returnValues;
+
+//               if (to.toLowerCase() !== address.toLowerCase()) return;
+
+//               const txHash = event.transactionHash;
+
+//               const existingDeposit = await depositDB
+//                 .findOne({ txnid: txHash })
+//                 .exec();
+
+//               if (existingDeposit) return;
+
+//               const depamt = Number(value) / Math.pow(10, decimal);
+
+//               const create_deposit_obj = {
+//                 userId,
+//                 currency,
+//                 currencySymbol,
+//                 depamt,
+//                 network: "BEP20",
+//                 depto: address,
+//                 txnid: txHash,
+//                 currencyMoveStatus: 0,
+//                 createdDate: new Date(),
+//                 modifiedDate: new Date(),
+//               };
+
+//               await depositDB.create(create_deposit_obj);
+
+//               const address_detail = await userCryptoAddress
+//                 .findOne({ address })
+//                 .collation({ locale: "en", strength: 2 });
+
+//               const WalletModel =
+//                 address_detail?.type === 1 ? adminWalletDB : userWalletDB;
+
+//               const userWallet = await WalletModel.findOne({
+//                 userId,
+//                 "wallets.currencyId": currency,
+//               });
+
+//               if (!userWallet) return;
+
+//               const walletIndex = userWallet.wallets.findIndex((w) =>
+//                 w.currencyId.equals(currency)
+//               );
+
+//               if (walletIndex === -1) return;
+
+//               userWallet.wallets[walletIndex].amount += depamt;
+//               await userWallet.save();
+
+//               if (address_detail?.type !== 1) {
+//                 await email_function(
+//                   userId,
+//                   currencySymbol,
+//                   txHash,
+//                   depamt,
+//                   userWallet.wallets[walletIndex].amount,
+//                   create_deposit_obj.createdDate,
+//                   "BEP20"
+//                 );
+//               }
+
+//               console.log("✅ Deposit success:", txHash);
+//             } catch (err) {
+//               console.error("❌ TX processing error:", err);
+//             }
+//           })
+//         );
+//       } catch (err) {
+//         console.error(
+//           `❌ Block range ${fromBlock}-${toBlock} error:`,
+//           err.message
+//         );
+//       }
+//     }
+//   } catch (err) {
+//     console.error("🔥 RPC connection error:", err);
+//   }
+// };
+
+const bnbtokendeposit = async (
+  address,
+  userId,
+  currencySymbol,
+  currency,
+  tokenContractAddress,
+  decimal
+) => {
+  try {
+    address = address.toLowerCase();
+    const tokenContract = tokenContractAddress.toLowerCase();
+
+    const latestBlock = await web3.eth.getBlockNumber();
+    const safeBlock = latestBlock - CONFIRMATIONS;
+
+    const scanData = await depositScanDB.findOne({
+      userId,
+      address,
+      tokenContract,
+    });
+
+    const startBlock = scanData
+      ? scanData.lastScannedBlock + 1
+      : Math.max(safeBlock - DEEP_SCAN_BLOCKS, 0);
+
+    if (startBlock > safeBlock) return;
+
+    const transferTopic = web3.utils.sha3("Transfer(address,address,uint256)");
+
+    let lastProcessedBlock = startBlock;
+
+    for (
+      let fromBlock = startBlock;
+      fromBlock <= safeBlock;
+      fromBlock += LOG_STEP
+    ) {
+      const toBlock = Math.min(fromBlock + LOG_STEP - 1, safeBlock);
+
+      const logs = await web3.eth.getPastLogs({
+        fromBlock,
+        toBlock,
+        address: tokenContract,
+        topics: [transferTopic, null, web3.utils.padLeft(address, 64)],
+      });
+
+      console.log("Here it comes vroo===", logs);
+
+      for (const log of logs) {
+        const txHash = log.transactionHash;
+
+        const exists = await depositDB.findOne({ txnid: txHash });
+        if (exists) continue;
+
+        const rawAmount = web3.utils.toBN(log.data);
+        const divisor = web3.utils.toBN(10).pow(web3.utils.toBN(decimal));
+
+        const depamt = Number(rawAmount.div(divisor).toString());
+
+        const depositObj = {
+          userId,
+          currency,
+          currencySymbol,
+          depamt,
+          depto: address,
+          txnid: txHash,
+          network: "BEP20",
+          currencyMoveStatus: 0,
+          createddate: new Date(),
+          updateddate: new Date(),
+        };
+
+        await depositDB.create(depositObj);
+
+        const addrDetail = await userCryptoAddress.findOne({ address });
+        const WalletModel =
+          addrDetail?.type === 1 ? adminWalletDB : userWalletDB;
+
+        const wallet = await WalletModel.findOne({
+          userId,
+          "wallets.currencyId": currency,
+        });
+
+        if (!wallet) continue;
+
+        const idx = wallet.wallets.findIndex((w) =>
+          w.currencyId.equals(currency)
+        );
+
+        if (idx === -1) continue;
+
+        wallet.wallets[idx].amount += depamt;
+        await wallet.save();
+
+        if (addrDetail?.type !== 1) {
+          await email_function(
+            userId,
+            currencySymbol,
+            txHash,
+            depamt,
+            wallet.wallets[idx].amount,
+            depositObj.createddate,
+            "BEP20"
+          );
         }
-            }
-         }
-        }catch(Err){
-         //console.log(Err);
-        }
-         }));
-    // }
-  }
-  catch(err){
-    console.log(err,"=-=-=-=")
+
+        lastProcessedBlock = log.blockNumber;
+      }
+    }
+
+    await depositScanDB.updateOne(
+      { userId, address, tokenContract },
+      { $set: { lastScannedBlock: lastProcessedBlock, updatedAt: new Date() } },
+      { upsert: true }
+    );
+  } catch (err) {
+    console.error("🔥 TOKEN scan error:", err);
   }
 };
 
-//ETH TOKEN DEPPOSIT FUNCTION
+
+// const bnbtokendeposit = async function (
+//   address,
+//   userId,
+//   currencySymbol,
+//   currency,
+//   tokenContractAddress,
+//   decimal
+// ) {
+//   try {
+//     const contract = new web3.eth.Contract(ERC20_ABI, tokenContractAddress);
+
+//     const latestBlock = await web3.eth.getBlockNumber();
+
+//     // 🔥 get last scanned block
+//     const scanData = await depositScanDB.findOne({
+//       address: address.toLowerCase(),
+//       tokenContract: tokenContractAddress.toLowerCase(),
+//     });
+
+//     // FIRST TIME → go deep
+//     // const startBlock = scanData?.lastScannedBlock || latestBlock - 100000;
+//     const TX_LOOKBACK = 800000; // ~20 days on BSC
+
+//     let startBlock;
+
+//     if (!scanData) {
+//       // FIRST TIME → deep scan
+//       startBlock = latestBlock - TX_LOOKBACK; // ~20 days
+//     } else {
+//       // NORMAL RUN → incremental
+//       startBlock = scanData.lastScannedBlock + 1;
+//     }
+//     // const startBlock = 75080000;
+//     const STEP = 100;
+
+//     console.log(
+//       "🔍 Scanning",
+//       tokenContractAddress,
+//       "from",
+//       startBlock,
+//       "to",
+//       latestBlock
+//     );
+// const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+//     for (
+//       let fromBlock = startBlock;
+//       fromBlock <= latestBlock;
+//       fromBlock += STEP
+//     ) {
+//       const toBlock = Math.min(fromBlock + STEP - 1, latestBlock);
+
+// // const toBlock = 75081000;
+//       const events = await contract.getPastEvents("Transfer", {
+//         filter: { to: address },
+//         fromBlock,
+//         toBlock,
+//       });
+
+//       console.log("here it comes ==", events);
+//       // return;
+//       for (const event of events) {
+//         const { to, value } = event.returnValues;
+//         if (to.toLowerCase() !== address.toLowerCase()) continue;
+
+//         const txHash = event.transactionHash;
+
+//         // avoid duplicate credit
+//         const exists = await depositDB.findOne({ txnid: txHash });
+//         if (exists) continue;
+
+//         const depamt = Number(value) / Math.pow(10, decimal);
+
+//         const depositObj = {
+//           userId,
+//           currency,
+//           currencySymbol,
+//           depamt,
+//           network: "BEP20",
+//           depto: address,
+//           txnid: txHash,
+//           currencyMoveStatus: 0,
+//           createdDate: new Date(),
+//           modifiedDate: new Date(),
+//         };
+
+//         await depositDB.create(depositObj);
+
+//         const address_detail = await userCryptoAddress.findOne({ address });
+
+//         const WalletModel =
+//           address_detail?.type === 1 ? adminWalletDB : userWalletDB;
+
+//         const wallet = await WalletModel.findOne({
+//           userId,
+//           "wallets.currencyId": currency,
+//         });
+
+//         if (!wallet) continue;
+
+//         const idx = wallet.wallets.findIndex((w) =>
+//           w.currencyId.equals(currency)
+//         );
+
+//         if (idx === -1) continue;
+
+//         wallet.wallets[idx].amount += depamt;
+//         await wallet.save();
+
+//         if (address_detail?.type !== 1) {
+//           await email_function(
+//             userId,
+//             currencySymbol,
+//             txHash,
+//             depamt,
+//             wallet.wallets[idx].amount,
+//             depositObj.createdDate,
+//             "BEP20"
+//           );
+//         }
+
+//         console.log("✅ Deposit credited:", txHash);
+//       }
+
+//       await sleep(300); 
+//     }
+
+//     // 🔐 SAVE LAST BLOCK
+//     await depositScanDB.updateOne(
+//       {
+//         address: address.toLowerCase(),
+//         tokenContract: tokenContractAddress.toLowerCase(),
+//       },
+//       {
+//         $set: {
+//           lastScannedBlock: latestBlock,
+//           updatedAt: new Date(),
+//         },
+//       },
+//       { upsert: true }
+//     );
+//   } catch (err) {
+//     console.error("🔥 Deposit scan error:", err);
+//   }
+// };
+
 const processErc20Data = (response, address, userId) => {
   try {
     if (response && response.length > 0) {
