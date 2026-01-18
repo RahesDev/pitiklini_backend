@@ -15,7 +15,7 @@ const userCryptoAddress = require("../schema/userCryptoAddress");
 const depositScanDB = require("../schema/depositScanDB");
 const DEEP_SCAN_BLOCKS = 28800; // ~20 days
 const CONFIRMATIONS = 3;
-const LOG_STEP = 500; 
+const LOG_STEP = 1000; 
 const BNB_LOG_STEP = 500;
 
 const Web3 = require("web3");
@@ -763,6 +763,10 @@ const bnbtokendeposit = async (
       fromBlock += LOG_STEP
     ) {
       const toBlock = Math.min(fromBlock + LOG_STEP - 1, safeBlock);
+
+      // console.log(
+      //   `scanning for bnb token deposit from ${fromBlock} to ${toBlock} block`
+      // );
 
       const logs = await web3.eth.getPastLogs({
         fromBlock,
