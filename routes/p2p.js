@@ -19,6 +19,7 @@ const paymentMethod = require("../schema/paymentMethod");
 const { RedisService } = require("../services/redis");
 var mailtempDB = require("../schema/mailtemplate");
 var mail = require("../helper/mailhelper");
+var verificationDB = require("../schema/VerificationAuto");
 
 //---------------------------Author Mugesh ------------------------------
 
@@ -2166,6 +2167,17 @@ router.post("/getp2pOrder", common.tokenmiddleware, async (req, res) => {
         orderId: getconfirmOrders.map_orderId,
       })
       .populate("userId", "displayname profile_image");
+    
+    let verification = await verificationDB.findOne({
+      external_id: getOrders.userId._id.toString(),
+    });
+
+    let orgName = "";
+    if (verification?.poi_data?.full_name) {
+      orgName = verification.poi_data.full_name;
+    }
+    
+    console.log("we needed details of order --->>", getOrders);
 
     var data = {
       firstCurrency: getOrders.firstCurrency,
@@ -2188,9 +2200,11 @@ router.post("/getp2pOrder", common.tokenmiddleware, async (req, res) => {
       userId: {
         _id: common.encrypt(getOrders.userId._id.toString()),
         displayname: getOrders.userId.displayname,
+        orgName: orgName,
       },
       fromCurrency: getOrders.fromCurrency,
       toCurrency: getOrders.toCurrency,
+      requirements: getOrders.requirements,
     };
 
     // Fetch bank details based on the encrypted userId and payment method
