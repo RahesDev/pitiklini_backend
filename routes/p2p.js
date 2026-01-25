@@ -2168,8 +2168,22 @@ router.post("/getp2pOrder", common.tokenmiddleware, async (req, res) => {
       })
       .populate("userId", "displayname profile_image");
     
+    // let verification = await verificationDB.findOne({
+    //   external_id: getOrders.userId._id.toString(),
+    // });
+
+    let kycUserId;
+
+    if (getconfirmOrders.type === "sell") {
+      // Seller is confirmer
+      kycUserId = getconfirmOrders.map_userId;
+    } else {
+      // Buyer is confirmer
+      kycUserId = getOrders.userId._id;
+    }
+
     let verification = await verificationDB.findOne({
-      external_id: getOrders.userId._id.toString(),
+      external_id: kycUserId.toString(),
     });
 
     let orgName = "";
