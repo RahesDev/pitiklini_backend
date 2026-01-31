@@ -1460,9 +1460,9 @@ router.post(
                     common.sendResponseSocket(
                       "success",
                       notification.message,
-                      "notify",
+                      "existnotify",
                       notification.to_user_id,
-                      function () { }
+                      function () {},
                     );
                     let resData = await mailtempDB.findOne({
                       key: "seller_coin_confirm",
@@ -1628,7 +1628,7 @@ router.post(
                     common.sendResponseSocket(
                       "success",
                       notification.message,
-                      "notify",
+                      "existnotify",
                       notification.to_user_id,
                       function () { }
                     );
