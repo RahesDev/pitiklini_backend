@@ -13,9 +13,11 @@ const usersDB = require("../schema/users");
 const common = require("../helper/common");
 const userCryptoAddress = require("../schema/userCryptoAddress");
 const depositScanDB = require("../schema/depositScanDB");
-const DEEP_SCAN_BLOCKS = 28800; // ~20 days
+// const DEEP_SCAN_BLOCKS = 28800; // ~20 days
+const DEEP_SCAN_BLOCKS = 8000; // ~5.5 days
 const CONFIRMATIONS = 3;
-const LOG_STEP = 1000; 
+// const LOG_STEP = 1000; 
+const LOG_STEP = 200; 
 const BNB_LOG_STEP = 500;
 
 const Web3 = require("web3");
@@ -732,7 +734,7 @@ const bnbtokendeposit = async (
   currencySymbol,
   currency,
   tokenContractAddress,
-  decimal
+  decimal,
 ) => {
   try {
     address = address.toLowerCase();
@@ -747,7 +749,7 @@ const bnbtokendeposit = async (
       tokenContract,
     });
 
-    const startBlock = scanData
+    let startBlock = scanData
       ? scanData.lastScannedBlock + 1
       : Math.max(safeBlock - DEEP_SCAN_BLOCKS, 0);
 
@@ -764,85 +766,105 @@ const bnbtokendeposit = async (
     ) {
       const toBlock = Math.min(fromBlock + LOG_STEP - 1, safeBlock);
 
-      // console.log(
-      //   `scanning for bnb token deposit from ${fromBlock} to ${toBlock} block`
-      // );
+      console.log("bnb token deposit check -->>", fromBlock, toBlock);
 
-      const logs = await web3.eth.getPastLogs({
-        fromBlock,
-        toBlock,
-        address: tokenContract,
-        topics: [transferTopic, null, web3.utils.padLeft(address, 64)],
-      });
+      let logs = [];
 
-      console.log("Here it comes vroo===", logs);
+      try {
+        logs = await web3.eth.getPastLogs({
+          fromBlock,
+          toBlock,
+          address: tokenContract,
+          topics: [transferTopic, null, web3.utils.padLeft(address, 64)],
+        });
+      } catch (err) {
+        console.error(`RPC ERROR ${fromBlock}-${toBlock}:`, err.message);
+        continue;
+      }
+
+      console.log("bnb token deposit check logs-->>", logs);
+
+      if (!logs.length) {
+        lastProcessedBlock = toBlock;
+        continue;
+      }
 
       for (const log of logs) {
-        const txHash = log.transactionHash;
+        try {
+          const txHash = log.transactionHash;
 
-        const exists = await depositDB.findOne({ txnid: txHash });
-        if (exists) continue;
+          const exists = await depositDB.findOne({ txnid: txHash });
+          if (exists) continue;
 
-        const rawAmount = web3.utils.toBN(log.data);
-        const divisor = web3.utils.toBN(10).pow(web3.utils.toBN(decimal));
+          const rawAmount = web3.utils.toBN(log.data);
+          const divisor = web3.utils.toBN(10).pow(web3.utils.toBN(decimal));
 
-        const depamt = Number(rawAmount.div(divisor).toString());
+          const depamt = Number(rawAmount.div(divisor).toString());
 
-        const depositObj = {
-          userId,
-          currency,
-          currencySymbol,
-          depamt,
-          depto: address,
-          txnid: txHash,
-          network: "BEP20",
-          currencyMoveStatus: 0,
-          createddate: new Date(),
-          updateddate: new Date(),
-        };
-
-        await depositDB.create(depositObj);
-
-        const addrDetail = await userCryptoAddress.findOne({ address });
-        const WalletModel =
-          addrDetail?.type === 1 ? adminWalletDB : userWalletDB;
-
-        const wallet = await WalletModel.findOne({
-          userId,
-          "wallets.currencyId": currency,
-        });
-
-        if (!wallet) continue;
-
-        const idx = wallet.wallets.findIndex((w) =>
-          w.currencyId.equals(currency)
-        );
-
-        if (idx === -1) continue;
-
-        wallet.wallets[idx].amount += depamt;
-        await wallet.save();
-
-        if (addrDetail?.type !== 1) {
-          await email_function(
+          const depositObj = {
             userId,
+            currency,
             currencySymbol,
-            txHash,
             depamt,
-            wallet.wallets[idx].amount,
-            depositObj.createddate,
-            "BEP20"
-          );
-        }
+            depto: address,
+            txnid: txHash,
+            network: "BEP20",
+            currencyMoveStatus: 0,
+            createddate: new Date(),
+            updateddate: new Date(),
+          };
 
-        lastProcessedBlock = log.blockNumber;
+          await depositDB.create(depositObj);
+
+          const addrDetail = await userCryptoAddress.findOne({ address });
+          const WalletModel =
+            addrDetail?.type === 1 ? adminWalletDB : userWalletDB;
+
+          const wallet = await WalletModel.findOne({
+            userId,
+            "wallets.currencyId": currency,
+          });
+
+          if (wallet) {
+            const idx = wallet.wallets.findIndex((w) =>
+              w.currencyId.equals(currency),
+            );
+
+            if (idx !== -1) {
+              wallet.wallets[idx].amount += depamt;
+              await wallet.save();
+            }
+          }
+
+          if (addrDetail?.type !== 1 && wallet) {
+            await email_function(
+              userId,
+              currencySymbol,
+              txHash,
+              depamt,
+              wallet.wallets.find((w) => w.currencyId.equals(currency))
+                ?.amount || 0,
+              depositObj.createddate,
+              "BEP20",
+            );
+          }
+
+          lastProcessedBlock = log.blockNumber;
+        } catch (txErr) {
+          console.error("TX PROCESS ERROR:", txErr);
+        }
       }
     }
 
     await depositScanDB.updateOne(
       { userId, address, tokenContract },
-      { $set: { lastScannedBlock: lastProcessedBlock, updatedAt: new Date() } },
-      { upsert: true }
+      {
+        $set: {
+          lastScannedBlock: lastProcessedBlock,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
     );
   } catch (err) {
     console.error("🔥 TOKEN scan error:", err);
