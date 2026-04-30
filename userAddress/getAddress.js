@@ -49,6 +49,9 @@ const sodium = require("libsodium-wrappers");
   await sodium.ready;
 })();
 
+let custodyToken = null;
+let custodyTokenExpiry = 0;
+
 // router.post(
 //   "/generateAddress",
 //   common.isEmpty,
@@ -217,131 +220,250 @@ const sodium = require("libsodium-wrappers");
 
 // ADDRESS GENERATION Final
 
-router.post("/generateAddress", common.isEmpty, common.tokenmiddleware, async (req,res) => {
-  try {
-    let getCurrency = await currencyDB.findOne({ _id : req.body.currId, currencySymbol : req.body.currencySymbol});
-    var get_user_wallet = await  userWalletDB.findOne({userId:req.userId})
-    if(!get_user_wallet){
-      let currencyArray = await currencyDB.find({}).map(currency => ({currencyId: currency._id,currencyName: currency.currencyName,currencySymbol: currency.currencySymbol}));
-      let walletData = {
-        userId: req.userId,
-        wallets: currencyArray,
-        };
-        await userWalletDB.create(walletData);
-    }else{
-      let walletIndex = get_user_wallet.wallets.findIndex(wallet => wallet.currencyId.equals(getCurrency._id));
-          if (walletIndex !== -1) {
-          } else {
-          get_user_wallet.wallets.push({
-          currencyId: getCurrency._id,
-          currencyName: getCurrency.currencyName,
-          currencySymbol: getCurrency.currencySymbol,
-          });
-          await get_user_wallet.save();
-         }
-    }
-    if(getCurrency != null){
-      var netWork = req.body.network;
-      var currencyFind = netWork == "erc20token" ? "ETH" : netWork == "bep20token" ? "BNB" :  netWork == "trc20token"  ? "TRX" : netWork == "matictoken"  ? "MATIC" :  req.body.currencySymbol
-      console.log(currencyFind,"currencyFind");
-      console.log(req.body.network,"req.body.network");
-      let find_currency = await currencyDB.findOne({currencySymbol: currencyFind});
-      let findAddress = await cryptoAddressDB.findOne({ $and: [ { user_id: req.userId }, { currencySymbol: currencyFind }]},{ address: 1, tag: 1, currencySymbol: 1});
-       if(findAddress != null){
-        var result = {
-          address: findAddress.address,
-          qrcode:   "https://quickchart.io/chart?cht=qr&chs=280x280&chl=" + findAddress.address +"&choe=UTF-8&chld=L",
-          currencySymbol: findAddress.currencySymbol,
-          network : currencyFind,
-          sendCurrency :  req.body.currencySymbol
-        };
-        return res.json({status :  true, Message : "success", data : result});
-       }else{
-        let userId = req.userId
-        var url = "";
-        var blockchain = currencyFind;
-      if( blockchain== "BTC"){
-           url = process.env.WALLETCALL+common.decrypt(process.env.BTC_CALL)
-        }else if(blockchain == "ETH"){
-           url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
-        }else if( blockchain== "BNB"){
-           url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
-        }else if( blockchain== "ARB"){
-          url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
-        }else if( blockchain== "MATIC"){
-          url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
-        }else if( blockchain == "XRP"){
-          url = process.env.WALLETCALL+common.decrypt(process.env.XRP_CALL)
-        }else if( blockchain == "TRX"){
-          url = process.env.WALLETCALL+common.decrypt(process.env.TRX_CALL)
-        }else{
-          url = ""
-        }
-          const data = {
-              userKey   : userId,
-              coinKey   : blockchain,
-              curencyId : getCurrency._id
-          };
-          console.log(data,"=-=-=-=-=-=--=")
-          console.log(url,"=-=-=-=-=-=--=")
-          //const response = await axios.post( url,data,{headers: {'Content-Type': 'application/json','Authorization': 'Bearer your_token_here'}}  );
-          const privateKey = Buffer.from(process.env.LIBSODIUMPRIVATE_KEY, 'hex');
-          const message = Buffer.from(JSON.stringify(data));
-          const signature = sodium.crypto_sign_detached(message, privateKey);
-  
-          console.log('Generated Signature:', Buffer.from(signature).toString('hex'));
-          // Send POST request with the signature
-          const response = await axios.post(url, data, {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${req.headers.authorization}`,
-              'X-Signature': Buffer.from(signature).toString('hex')
-            }
-          });
-  
-          console.log('Response Headers:', response.headers);
-          console.log('Response Data:', response.data);
-  
-          var resulData = response.data.data;
-          if (resulData) {
-            var obj = {
-              user_id: userId,
-              address: resulData.address,
-              privateKey:resulData.currency_private_key,
-              currencySymbol: find_currency.currencySymbol,
-              userIdKey: resulData.privateKey,
-              currency: find_currency._id,
-              publicKey: req.body.currencySymbol === "XRP" || req.body.currencySymbol === "TRX" ? resulData.publicKey : "",
-              trx_hexaddress: req.body.currencySymbol === "TRX" ? resulData.hex : ""
-            };
-  
-            console.log('Database Object:', obj);
-            let addAddress = await cryptoAddressDB.create(obj);
-            try {
-              if (addAddress) {
-                var result = {
-                  address: resulData.address,
-                  qrcode: "https://quickchart.io/chart?cht=qr&chs=280x280&chl=" + resulData.address + "&choe=UTF-8&chld=L",
-                  currencySymbol: getCurrency.currencySymbol,
-                };
-                return res.json({ status: true, Message: "success", data: result });
-              }
-            } catch (err) {
-              console.log(err)
-              return res.json({ status: false, Message: "Please try again later" });
-            }
-          }else{
-            return res.json({ status: false, Message: "Please try again later" });
-          }
-       }
-    }else{
-      return res.json({ status: false, Message: "Oops!, Invalid Details"});
-    }
-  } catch (error) {
-    console.log(error,"--0-0-0-0-0-")
-    return res.json({ status: false, Message: "Internal server error",error:error });
+async function getCustodyToken() {
+  if (custodyToken && Date.now() < custodyTokenExpiry) {
+    return custodyToken;
   }
-} );
+
+  const clientId = process.env.TANGANY_CUSTODY_CLIENT_ID;
+  const clientSecret = process.env.TANGANY_CUSTODY_CLIENT_SECRET;
+
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
+    "base64",
+  );
+
+  const response = await axios.post(
+    "https://auth.tangany.com/2.0",
+    new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "https://auth.tangany.com/custody-service/.default",
+    }),
+    {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    },
+  );
+
+  custodyToken = response.data.access_token;
+  custodyTokenExpiry = Date.now() + (response.data.expires_in - 60) * 1000;
+
+  console.log("custody token success =>", custodyToken);
+
+  return custodyToken;
+}
+
+async function getWalletDetails(walletId) {
+  const token = await getCustodyToken();
+
+  const res = await axios.get(
+    `https://api.tangany.com/custody/wallets/${walletId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "tangany-version": "3",
+      },
+    },
+  );
+
+  return res.data;
+}
+
+// router.post("/generateAddress", common.isEmpty, common.tokenmiddleware, async (req,res) => {
+//   try {
+//     let getCurrency = await currencyDB.findOne({ _id : req.body.currId, currencySymbol : req.body.currencySymbol});
+//     var get_user_wallet = await  userWalletDB.findOne({userId:req.userId})
+//     if(!get_user_wallet){
+//       let currencyArray = await currencyDB.find({}).map(currency => ({currencyId: currency._id,currencyName: currency.currencyName,currencySymbol: currency.currencySymbol}));
+//       let walletData = {
+//         userId: req.userId,
+//         wallets: currencyArray,
+//         };
+//         await userWalletDB.create(walletData);
+//     }else{
+//       let walletIndex = get_user_wallet.wallets.findIndex(wallet => wallet.currencyId.equals(getCurrency._id));
+//           if (walletIndex !== -1) {
+//           } else {
+//           get_user_wallet.wallets.push({
+//           currencyId: getCurrency._id,
+//           currencyName: getCurrency.currencyName,
+//           currencySymbol: getCurrency.currencySymbol,
+//           });
+//           await get_user_wallet.save();
+//          }
+//     }
+//     if(getCurrency != null){
+//       var netWork = req.body.network;
+//       var currencyFind = netWork == "erc20token" ? "ETH" : netWork == "bep20token" ? "BNB" :  netWork == "trc20token"  ? "TRX" : netWork == "matictoken"  ? "MATIC" :  req.body.currencySymbol
+//       console.log(currencyFind,"currencyFind");
+//       console.log(req.body.network,"req.body.network");
+//       let find_currency = await currencyDB.findOne({currencySymbol: currencyFind});
+//       let findAddress = await cryptoAddressDB.findOne({ $and: [ { user_id: req.userId }, { currencySymbol: currencyFind }]},{ address: 1, tag: 1, currencySymbol: 1});
+//        if(findAddress != null){
+//         var result = {
+//           address: findAddress.address,
+//           qrcode:   "https://quickchart.io/chart?cht=qr&chs=280x280&chl=" + findAddress.address +"&choe=UTF-8&chld=L",
+//           currencySymbol: findAddress.currencySymbol,
+//           network : currencyFind,
+//           sendCurrency :  req.body.currencySymbol
+//         };
+//         return res.json({status :  true, Message : "success", data : result});
+//        }else{
+//         let userId = req.userId
+//         var url = "";
+//         var blockchain = currencyFind;
+//       if( blockchain== "BTC"){
+//            url = process.env.WALLETCALL+common.decrypt(process.env.BTC_CALL)
+//         }else if(blockchain == "ETH"){
+//            url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
+//         }else if( blockchain== "BNB"){
+//            url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
+//         }else if( blockchain== "ARB"){
+//           url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
+//         }else if( blockchain== "MATIC"){
+//           url = process.env.WALLETCALL+common.decrypt(process.env.EVM_CALL)
+//         }else if( blockchain == "XRP"){
+//           url = process.env.WALLETCALL+common.decrypt(process.env.XRP_CALL)
+//         }else if( blockchain == "TRX"){
+//           url = process.env.WALLETCALL+common.decrypt(process.env.TRX_CALL)
+//         }else{
+//           url = ""
+//         }
+//           const data = {
+//               userKey   : userId,
+//               coinKey   : blockchain,
+//               curencyId : getCurrency._id
+//           };
+//           console.log(data,"=-=-=-=-=-=--=")
+//           console.log(url,"=-=-=-=-=-=--=")
+//           //const response = await axios.post( url,data,{headers: {'Content-Type': 'application/json','Authorization': 'Bearer your_token_here'}}  );
+//           const privateKey = Buffer.from(process.env.LIBSODIUMPRIVATE_KEY, 'hex');
+//           const message = Buffer.from(JSON.stringify(data));
+//           const signature = sodium.crypto_sign_detached(message, privateKey);
+  
+//           console.log('Generated Signature:', Buffer.from(signature).toString('hex'));
+//           // Send POST request with the signature
+//           const response = await axios.post(url, data, {
+//             headers: {
+//               'Content-Type': 'application/json',
+//               'Authorization': `Bearer ${req.headers.authorization}`,
+//               'X-Signature': Buffer.from(signature).toString('hex')
+//             }
+//           });
+  
+//           console.log('Response Headers:', response.headers);
+//           console.log('Response Data:', response.data);
+  
+//           var resulData = response.data.data;
+//           if (resulData) {
+//             var obj = {
+//               user_id: userId,
+//               address: resulData.address,
+//               privateKey:resulData.currency_private_key,
+//               currencySymbol: find_currency.currencySymbol,
+//               userIdKey: resulData.privateKey,
+//               currency: find_currency._id,
+//               publicKey: req.body.currencySymbol === "XRP" || req.body.currencySymbol === "TRX" ? resulData.publicKey : "",
+//               trx_hexaddress: req.body.currencySymbol === "TRX" ? resulData.hex : ""
+//             };
+  
+//             console.log('Database Object:', obj);
+//             let addAddress = await cryptoAddressDB.create(obj);
+//             try {
+//               if (addAddress) {
+//                 var result = {
+//                   address: resulData.address,
+//                   qrcode: "https://quickchart.io/chart?cht=qr&chs=280x280&chl=" + resulData.address + "&choe=UTF-8&chld=L",
+//                   currencySymbol: getCurrency.currencySymbol,
+//                 };
+//                 return res.json({ status: true, Message: "success", data: result });
+//               }
+//             } catch (err) {
+//               console.log(err)
+//               return res.json({ status: false, Message: "Please try again later" });
+//             }
+//           }else{
+//             return res.json({ status: false, Message: "Please try again later" });
+//           }
+//        }
+//     }else{
+//       return res.json({ status: false, Message: "Oops!, Invalid Details"});
+//     }
+//   } catch (error) {
+//     console.log(error,"--0-0-0-0-0-")
+//     return res.json({ status: false, Message: "Internal server error",error:error });
+//   }
+// });
+
+router.post(
+  "/generateAddress",
+  common.isEmpty,
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const { currencySymbol, network } = req.body;
+
+      const user = await usersDB.findById(req.userId);
+      if (!user) {
+        return res.json({ status: false, Message: "User not found" });
+      }
+
+      let selectedNetwork = "";
+
+      // 🔥 MAP NETWORK CORRECTLY
+      if (currencySymbol === "BTC") {
+        selectedNetwork = "BITCOIN";
+      } 
+      else if (currencySymbol === "ETH") {
+        selectedNetwork = "ETHEREUM";
+      } 
+      else if (currencySymbol === "BNB") {
+        selectedNetwork = "BSC"; // ⚠️ only if you create BSC wallet later
+      } 
+      else if (currencySymbol === "TRX") {
+        selectedNetwork = "TRON";
+      } 
+      else if (currencySymbol === "USDT") {
+        if (network === "ERC20") selectedNetwork = "ETHEREUM";
+        else if (network === "BEP20") selectedNetwork = "BSC";
+        else if (network === "TRC20") selectedNetwork = "TRON";
+      }
+
+      console.log("selectedNetwork -->", selectedNetwork);
+
+      const walletData = user.depasifyWallets?.[selectedNetwork];
+
+      if (!walletData || !walletData.address) {
+        return res.json({
+          status: false,
+          Message: `${selectedNetwork} address not available`,
+        });
+      }
+
+      return res.json({
+        status: true,
+        data: {
+          address: walletData.address,
+          network: selectedNetwork,
+          currencySymbol,
+          qrcode:
+            "https://quickchart.io/chart?cht=qr&chs=280x280&chl=" +
+            walletData.address,
+        },
+      });
+
+    } catch (error) {
+      console.log("generateAddress error", error);
+      return res.json({
+        status: false,
+        Message: "Internal server error",
+      });
+    }
+  }
+);
 
 // admin address generation
 

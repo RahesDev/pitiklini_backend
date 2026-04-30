@@ -20,6 +20,14 @@ var mail = require("../helper/mailhelper");
 const bufferTime = 30;
 const notify = require("../schema/notification");
 
+let custodyToken = null;
+let custodyTokenExpiry = 0;
+
+const BASE_URL = "https://sandbox.depasify.com/api/v1";
+
+let depasifyToken = null;
+let depasifyExpiry = 0;
+
 async function generateSignature(url) {
     await sodium.ready;
     // const message = Buffer.from(url, 'utf8');
@@ -90,6 +98,87 @@ async function sendAdminNotification(userName, currencySymbol, amount, totalAmou
     };
 
     await sendMail(mailOptions);
+}
+
+async function getCustodyToken() {
+  if (custodyToken && Date.now() < custodyTokenExpiry) {
+    return custodyToken;
+  }
+
+  const clientId = process.env.TANGANY_CUSTODY_CLIENT_ID;
+  const clientSecret = process.env.TANGANY_CUSTODY_CLIENT_SECRET;
+
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
+    "base64",
+  );
+
+  const response = await axios.post(
+    "https://auth.tangany.com/2.0",
+    new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "https://auth.tangany.com/custody-service/.default",
+    }),
+    {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    },
+  );
+
+  custodyToken = response.data.access_token;
+  custodyTokenExpiry = Date.now() + (response.data.expires_in - 60) * 1000;
+
+  console.log("custody token success =>", custodyToken);
+
+  return custodyToken;
+}
+
+async function sendCrypto(walletAddress, toAddress, amount, currency, isTestnet = true) {
+  const token = await getCustodyToken();
+
+  let protocol = "eth";
+  let network = "mainnet";
+
+  if (currency === "BTC" || currency === "BTC-TEST") {
+    protocol = "btc";
+    network = isTestnet ? "testnet3" : "mainnet";
+  } else if (
+    currency === "ETH" ||
+    currency === "ETH-TEST" ||
+    currency === "BNB" ||
+    currency === "BNB-TEST"
+  ) {
+    protocol = "eth";
+    network = isTestnet ? "sepolia" : "mainnet";
+  } else if (currency === "XRP" || currency === "XRP-TEST") {
+    protocol = "xrp";
+    network = isTestnet ? "testnet" : "mainnet";
+  }
+
+  const res = await axios.post(
+    `https://api.tangany.com/custody/protocols/${protocol}/transactions`,
+    {
+      from: {
+        wallet: walletAddress,
+      },
+      to: {
+        address: toAddress,
+      },
+      amount: String(amount),
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "tangany-version": "2",
+        "tangany-network": network,
+      },
+    }
+  );
+
+  return res.data;
 }
 
 async function processWithdrawal(req, res) {
@@ -177,14 +266,14 @@ async function processWithdrawal(req, res) {
         currency.currencySymbol,
         receiveamount,
         totalAmountWithdrawn,
-        withdrawalAddress
+        withdrawalAddress,
       );
       var notification = {
         to_user_id: req.userId,
         status: 0,
         message: `Your withdrawal request has been sent to the admin for manual approval.`,
         link: "/notificationHistory",
-      }
+      };
 
       let notifica = await notify.create(notification);
       return res.json({
@@ -225,350 +314,207 @@ async function processWithdrawal(req, res) {
         address: withdrawalAddress,
         networkType,
         tokenAddress,
-        tokenDecimal
+        tokenDecimal,
       };
 
       console.log("Wallet Data:", walletData);
 
-      let privateKeyShareUrl1;
-      let privateKeyShareUrl2;
-      let privateKeyShareUrl3;
+      // ✅ GET USER WALLET
+      // ==========================
+      const userWallet = await userWalletDB.findOne({ userId });
 
-      console.log(
-        currency.currencySymbol,
-        networkType,
-        "currency.currencySymbol"
+      const walletCoin = userWallet.wallets.find(
+        (w) => w.currencyId.toString() === currencyId,
       );
 
-      if (currency.currencySymbol === "BTC") {
-        privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/1`;
-        privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/2`;
-        privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/3`;
-      } else if (
-        currency.currencySymbol === "ETH" ||
-        currency.currencySymbol === "BNB" ||
-        networkType === "ERC20" ||
-        networkType === "BEP20"
-      ) {
-        // } else if (currency.currencySymbol === 'ETH' || currency.currencySymbol === 'BNB' || (currency.currencySymbol === 'USDT'&& networkType==='ERC20') || (currency.currencySymbol === 'USDT'&& networkType==='BEP20') || (currency.currencySymbol === 'USDT'&& networkType==='TRC20') || currency.currencySymbol === 'USDT') {
-        privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/1`;
-        privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/2`;
-        privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/3`;
-      } else if (currency.currencySymbol === "TRX" || networkType === "TRC20") {
-        console.log("sssssssssssssssssssssssssss");
-        privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/1`;
-        privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/2`;
-        privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/3`;
-      } else if (currency.currencySymbol === "XRP") {
-        privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/1`;
-        privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/2`;
-        privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/3`;
-      } else {
-        return res
-          .status(400)
-          .json({ status: false, message: "Unsupported currency." });
+      if (!walletCoin || walletCoin.balance < amount) {
+        return res.json({
+          status: false,
+          message: "Insufficient balance",
+        });
       }
 
-      console.log("PrivateKeyShare URL 1:", privateKeyShareUrl1);
-      console.log("PrivateKeyShare URL 2:", privateKeyShareUrl2);
-      console.log("PrivateKeyShare URL 3:", privateKeyShareUrl3);
+      // ==========================
+      // ✅ FEES CALCULATION
+      // ==========================
+      const feesNow = Number(currency.withdrawFee || 0);
+      const receiveAmount = amount - feesNow;
 
-      const [share1, share2, share3] = await Promise.all([
-        getSignedPrivateKeyShare(privateKeyShareUrl1, req),
-        getSignedPrivateKeyShare(privateKeyShareUrl2, req),
-        getSignedPrivateKeyShare(privateKeyShareUrl3, req),
-      ]);
-
-      if (!share1 || !share2 || !share3) {
-        throw new Error("One or more shares are undefined or invalid");
+      if (receiveAmount <= 0) {
+        return res.json({
+          status: false,
+          message: "Invalid amount after fees",
+        });
       }
 
-      const shares = [share3, share1, share2];
-      const reconstructedKey = secrets.hex2str(secrets.combine(shares));
-      console.log(reconstructedKey, "??????????????????");
-      if (!reconstructedKey) {
-        return res
-          .status(500)
-          .json({ status: false, message: "Something went wrong!" });
+      // 🔥 MAP NETWORK
+      let depaNetwork = "";
+      let asset = currency.currencySymbol;
+
+      if (networkType === "ERC20") depaNetwork = "ETHEREUM";
+      else if (networkType === "TRC20") depaNetwork = "TRON";
+      else if (networkType === "BEP20") depaNetwork = "BSC";
+      else depaNetwork = currency.currencySymbol;
+
+      // 🔥 GET USER WALLET
+      const walletInfo = user.depasifyWallets?.[depaNetwork];
+
+      if (!walletInfo) {
+        return res.json({
+          status: false,
+          message: "Wallet not found for this network",
+        });
       }
 
-      let walletServiceUrl;
-      let walletData2;
+      // 🔥 SEND CRYPTO
+      let tx;
 
-      var symbol =
-        networkType === "BEP20"
-          ? "BNB"
-          : networkType === "ERC20"
-            ? "ETH"
-            : networkType === "TRC20"
-              ? "TRX"
-              : currency.currencySymbol;
-      var get_admin_address = await cryptoAddressDB.find({
-        type: 1,
-        currencySymbol: symbol,
-      });
-      console.log(get_admin_address, "get_admin_address");
-
-      if (currency.currencySymbol === "BTC") {
-        // walletServiceUrl = 'http://localhost:3001/api/v1/bitcoin/mainnet/btctransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/bitcoin/mainnet/btctransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          fromPrivateKeyWIF: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount,
-          chain: currency.currencySymbol,
-        };
-      } else if (currency.currencySymbol === "TRX" || networkType === "TRC20") {
-        console.log("entered into TRX function");
-        //walletServiceUrl = 'http://localhost:3001/api/v1/trxNetwork/mainnet/trxTransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/trxNetwork/mainnet/trxTransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          privateKey: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount * 1e6,
-          tokenAddress: walletData.tokenAddress,
-          tokenDecimal: walletData.tokenDecimal
-        };
-      } else if (networkType === "ERC20" || networkType === "BEP20") {
-        //walletServiceUrl = 'http://localhost:3001/api/v1/evmChain/mainnet/ethTransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/ethTransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          fromPrivateKey: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount,
-          chain: walletData.networkType === "ERC20" ? "ETH" : "BNB",
-          tokenAddress: walletData.tokenAddress,
-          tokenDecimal: walletData.tokenDecimal
-        };
-      } else if (currency.currencySymbol === "BNB") {
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/bnb_Transfer`;
-        // walletServiceUrl = `http://localhost:3001/api/v1/evmChain/mainnet/bnb_Transfer`
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          fromPrivateKey: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount,
-          chain: currency.currencySymbol,
-          tokenAddress: walletData.tokenAddress,
-        };
-      } else if (currency.currencySymbol === "ETH") {
-        //walletServiceUrl = 'http://localhost:3001/api/v1/evmChain/mainnet/ethTransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/ethTransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          fromPrivateKey: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount,
-          chain: currency.currencySymbol,
-        };
-      } else if (currency.currencySymbol === "TRX") {
-        console.log("entered into TRX function");
-        //walletServiceUrl = 'http://localhost:3000/api/v1/trxNetwork/mainnet/trxTransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/trxNetwork/mainnet/trxTransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          privateKey: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount * 1e6,
-          tokenAddress: walletData.tokenAddress,
-        };
-      } else if (currency.currencySymbol === "XRP") {
-        //walletServiceUrl = 'http://localhost:3001/api/v1/xrpNetwork/mainnet/xrpTransfer';
-        walletServiceUrl = `${process.env.WALLETCALL}/api/v1/xrpNetwork/mainnet/xrpTransfer`;
-
-        walletData2 = {
-          fromAddress: get_admin_address[0].address,
-          fromSecret: reconstructedKey,
-          toAddress: walletData.address,
-          amount: walletData.amount,
-        };
-      } else {
-        return res
-          .status(400)
-          .json({ status: false, message: "Unsupported currency." });
-      }
-
-      console.log("Wallet Service URL:", walletServiceUrl);
-      console.log("Wallet Data 2:", walletData2);
-      console.log("before calling")
-      const signature = await generateSignature2(walletData2);
-      console.log("after calling")
-      const walletResponse = await axios.post(walletServiceUrl, walletData2, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Signature": signature,
-        },
-        // timeout: 7000
-        timeout: 70000,
-      });
-      console.log("walletResponse", walletResponse.data);
-      if (walletResponse && walletResponse.data.txId) {
-        const updatedWithdrawal = await withdrawDB.findOneAndUpdate(
-          { user_id: walletData.userId, status: 0, _id: withdrawotp._id },
-          {
-            $set: {
-              status: 2,
-              txn_id: walletResponse.data.txId,
-              amount: walletData.amount,
-              receiveamount: walletData.receiveamount,
-              fees: walletData.fees,
-              withdraw_address: walletData.address,
-            },
-          },
-          { new: true, useFindAndModify: false }
+      try {
+        tx = await sendCryptoDepasify(
+          user.depasifyAccountId,
+          walletInfo.walletId,
+          receiveAmount,
+          asset,
+          withdrawalAddress,
+          depaNetwork,
         );
-
-        console.log("Updated Withdrawal:", updatedWithdrawal);
-        if (updatedWithdrawal) {
-          const userwallet_update = await userWalletDB.findOneAndUpdate(
-            {
-              userId: walletData.userId,
-              "wallets.currencySymbol": currency.currencySymbol,
-            },
-            { $inc: { "wallets.$.amount": -walletData.totalamount } }
-          );
-          const adminwallet_update = await adminwalletDB.findOneAndUpdate(
-            {
-              userId: "66c35de1f9ce3961586ce5fd",
-              "wallets.currencySymbol": currency.currencySymbol,
-            },
-            { $inc: { "wallets.$.amount": -walletData.totalamount } }
-          );
-          console.log(adminwallet_update, "adminwallet_update");
-
-          var profitObj = {
-            type: "Withdraw",
-            user_id: walletData.userId,
-            currencyid: currency._id,
-            fees: fees,
-            fullfees: fees,
-            orderid: updatedWithdrawal._id,
-          };
-          let storeAdminFee = await profitDB.create(profitObj);
-          console.log("Updated userwallet_update:bnbnbnbn", userwallet_update);
-
-          var USERNAME = user.displayname;
-          //   var AMOUNT = walletResponse.data.amount
-          var AMOUNT = walletData.totalamount;
-          var CURRENCY = walletData.totalamount;
-          var Transaction_ID = walletResponse.data.txId;
-
-          var EXPLOREURL =
-            currency.currencySymbol === "BNB"
-              ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
-              : currency.currencySymbol === "ETH"
-                ? `${process.env.EXPLORER_LINK}/${walletResponse.data.txId}`
-                : currency.currencySymbol === "XRP"
-                  ? `${process.env.EXPLORER_XRP}/${walletResponse.data.txId}`
-                  : currency.currencySymbol === "BTC"
-                    ? `${process.env.EXPLORER_BTC}/${walletResponse.data.txId}`
-                    : currency.currencySymbol === "TRX"
-                      ? `${process.env.EXPLORER_TRX}/${walletResponse.data.txId}`
-                      : currency.currencySymbol === "USDT" && networkType === "TRC20"
-                        ? `${process.env.EXPLORER_TRX}/${walletResponse.data.txId}`
-                        : currency.currencySymbol === "USDT" && networkType === "ERC20"
-                          ? `${process.env.EXPLORER_LINK}/${walletResponse.data.txId}`
-                          : currency.currencySymbol === "USDT" && networkType === "BEP20"
-                            ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
-                            : currency.currencySymbol === "VTX" && networkType === "BEP20"
-                              ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
-                              : "";
-          var DATE = moment(latestWithdrawal.created_at).format("lll");
-          var findDetails = await antiPhishing.findOne({ userid: user._id });
-          var APCODE = `Antiphising Code - ${findDetails ? findDetails.APcode : ""
-            }`;
-          let resData = await mailtempDB.findOne({
-            key: "CRYPTO-WITHDRAW-VERIFIED",
-          });
-          var etempdataDynamic = resData.body
-            .replace(/###USERNAME###/g, USERNAME)
-            .replace(/###AMOUNT###/g, AMOUNT)
-            .replace(/###EXPLOREURL###/g, EXPLOREURL)
-            .replace(
-              /###CURRENCY###/g,
-              currency.currencySymbol != undefined
-                ? currency.currencySymbol
-                : ""
-            )
-            .replace(/###TRANSACTION_ID###/g, Transaction_ID)
-            .replace(/###DATE###/g, DATE)
-            .replace(
-              /###APCODE###/g,
-              findDetails && findDetails.Status == "true" ? APCODE : ""
-            );
-
-          var mailRes = await mail.sendMail({
-            from: {
-              name: process.env.FROM_NAME,
-              address: process.env.FROM_EMAIL,
-            },
-
-            to: common.decrypt(user.email),
-            subject: resData.Subject,
-            html: etempdataDynamic,
-          });
-
-          var notification = {
-            to_user_id: req.userId,
-            status: 0,
-            message: `Transaction is being processed. Please wait for confirmation..`,
-            link: "/notificationHistory",
-          }
-          let notifica = await notify.create(notification);
-
-          if (mailRes != null) {
-
-            return res.json({
-              status: true,
-              message:
-                "Transaction is being processed. Please wait for confirmation..",
-              data: walletResponse.data,
-            });
-          }
-        } else {
-          return res
-            .status(500)
-            .json({ message: "Failed to update withdrawal status." });
-        }
-      } else {
-        const updatedWithdrawal = await withdrawDB.findOneAndUpdate(
-          { user_id: walletData.userId, status: 0, _id: withdrawotp._id },
-          {
-            $set: {
-              status: 3,
-            },
-          },
-          { new: true, useFindAndModify: false }
+      } catch (err) {
+        console.log(
+          "Depasify Withdraw Error:",
+          err.response?.data || err.message,
         );
 
         await withdraw_cancel_email(
-          latestWithdrawal.currency_symbol,
+          currency.currencySymbol,
           user.displayname,
-          latestWithdrawal.amount,
+          amount,
           common.decrypt(user.email),
-          user._id
+          user._id,
         );
-        var notification = {
-          to_user_id: req.userId,
-          status: 0,
-          message: `Transaction Canceled`,
-          link: "/notificationHistory",
-        }
-        let notifica = await notify.create(notification);
-        return res.status(200).json({
-          status: "TransactionCanceled",
-          message: "Transaction Canceled",
-        });
 
+        return res.json({
+          status: false,
+          message: "Blockchain transaction failed",
+        });
       }
+
+      // ==========================
+      // ✅ UPDATE USER BALANCE
+      // ==========================
+      // walletCoin.balance -= amount;
+      // await userWallet.save();
+      await userWalletDB.updateOne(
+        {
+          userId,
+          "wallets.currencyId": currencyId,
+          "wallets.balance": { $gte: amount },
+        },
+        {
+          $inc: {
+            "wallets.$.balance": -amount,
+          },
+        },
+      );
+
+      console.log("FULL TX RESPONSE:", tx);
+
+      // ==========================
+      // ✅ UPDATE WITHDRAW RECORD
+      // ==========================
+      await withdrawDB.findByIdAndUpdate(withdrawotp._id, {
+        status: 1,
+        txn_id: tx.data.id,
+        // processedDate: new Date(),
+      });
+
+      // ==========================
+      // ✅ SUCCESS RESPONSE
+      // ==========================
+      var USERNAME = user.displayname;
+      //   var AMOUNT = walletResponse.data.amount
+      var AMOUNT = walletData.totalamount;
+      var CURRENCY = walletData.totalamount;
+      var Transaction_ID = tx.id;
+
+      var EXPLOREURL =
+        currency.currencySymbol === "BNB"
+          ? `${process.env.EXPLORER_BNB}/${tx.id}`
+          : currency.currencySymbol === "ETH"
+            ? `${process.env.EXPLORER_LINK}/${tx.id}`
+            : currency.currencySymbol === "XRP"
+              ? `${process.env.EXPLORER_XRP}/${tx.id}`
+              : currency.currencySymbol === "BTC"
+                ? `${process.env.EXPLORER_BTC}/${tx.id}`
+                : currency.currencySymbol === "TRX"
+                  ? `${process.env.EXPLORER_TRX}/${tx.id}`
+                  : currency.currencySymbol === "USDT" &&
+                      networkType === "TRC20"
+                    ? `${process.env.EXPLORER_TRX}/${tx.id}`
+                    : currency.currencySymbol === "USDT" &&
+                        networkType === "ERC20"
+                      ? `${process.env.EXPLORER_LINK}/${tx.id}`
+                      : currency.currencySymbol === "USDT" &&
+                          networkType === "BEP20"
+                        ? `${process.env.EXPLORER_BNB}/${tx.id}`
+                        : currency.currencySymbol === "VTX" &&
+                            networkType === "BEP20"
+                          ? `${process.env.EXPLORER_BNB}/${tx.id}`
+                          : "";
+      var DATE = moment(latestWithdrawal.created_at).format("lll");
+      var findDetails = await antiPhishing.findOne({ userid: user._id });
+      var APCODE = `Antiphising Code - ${
+        findDetails ? findDetails.APcode : ""
+      }`;
+      let resData = await mailtempDB.findOne({
+        key: "CRYPTO-WITHDRAW-VERIFIED",
+      });
+      var etempdataDynamic = resData.body
+        .replace(/###USERNAME###/g, USERNAME)
+        .replace(/###AMOUNT###/g, AMOUNT)
+        .replace(/###EXPLOREURL###/g, EXPLOREURL)
+        .replace(
+          /###CURRENCY###/g,
+          currency.currencySymbol != undefined ? currency.currencySymbol : "",
+        )
+        .replace(/###TRANSACTION_ID###/g, Transaction_ID)
+        .replace(/###DATE###/g, DATE)
+        .replace(
+          /###APCODE###/g,
+          findDetails && findDetails.Status == "true" ? APCODE : "",
+        );
+
+      var mailRes = await mail.sendMail({
+        from: {
+          name: process.env.FROM_NAME,
+          address: process.env.FROM_EMAIL,
+        },
+
+        to: common.decrypt(user.email),
+        subject: resData.Subject,
+        html: etempdataDynamic,
+      });
+
+      var notification = {
+        to_user_id: req.userId,
+        status: 0,
+        message: `Transaction is being processed. Please wait for confirmation..`,
+        link: "/notificationHistory",
+      };
+      let notifica = await notify.create(notification);
+
+      if (mailRes != null) {
+        return res.json({
+          status: true,
+          message:
+            "Transaction is being processed. Please wait for confirmation..",
+          data: tx.id,
+        });
+      }
+      // return res.json({
+      //   status: true,
+      //   message: "Withdrawal successful",
+      //   txid: tx.id,
+      // });
     }
   } catch (error) {
     console.log(error,"eroroorerorooreroroorerorooreroroor")
@@ -592,19 +538,593 @@ async function processWithdrawal(req, res) {
     console.log("updatedWithdrawal",updatedWithdrawal);
     
     console.error("Error in processWithdrawal:", error);
-    await withdraw_cancel_email(
-      latestWithdrawal.currency_symbol,
-      user.displayname,
-      latestWithdrawal.amount,
-      common.decrypt(user.email),
-      user._id,
-      latestWithdrawal.created_at
-    );
+    // await withdraw_cancel_email(
+    //   latestWithdrawal.currency_symbol,
+    //   user.displayname,
+    //   latestWithdrawal.amount,
+    //   common.decrypt(user.email),
+    //   user._id,
+    //   latestWithdrawal.created_at
+    // );
     return res
       .status(200)
       .json({ status: "TransactionCanceled", message: "Transaction Canceled" });
   }
 }
+
+async function getDepasifyToken() {
+  if (depasifyToken && Date.now() < depasifyExpiry) {
+    return depasifyToken;
+  }
+
+  const res = await axios.post(
+    `${BASE_URL}/sign_in`,
+    {
+      email: process.env.DEPASIFY_EMAIL,
+      password: process.env.DEPASIFY_PASSWORD,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    },
+  );
+
+  console.log("LOGIN RESPONSE:", res.data);
+
+  depasifyToken = res.data?.data?.token;
+
+  if (!depasifyToken) {
+    throw new Error("Token not found");
+  }
+
+  depasifyExpiry = Date.now() + 50 * 60 * 1000;
+
+  console.log("depasifyToken -->>", depasifyToken);
+  return depasifyToken;
+}
+
+async function sendCryptoDepasify(accountId, walletId, amount, asset, address, network) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.post(
+    `${BASE_URL}/accounts/${accountId}/blockchain_wallets/${walletId}/blockchain_payments`,
+    {
+      amount: String(amount),
+      currency: asset, // USDT / BTC
+      // asset: asset, // USDT / BTC
+      destination_address: address,
+      network: network,
+    },
+    {
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  console.log("Withdraw response:", res.data);
+  return res.data;
+}
+
+// async function processWithdrawal(req, res) {
+//   try {
+//     const { currencyId, amount, otp, withdrawalAddress, networkType } =
+//       req.body;
+//     const userId = req.userId;
+//     console.log("User ID from token:", userId);
+
+//     const latestWithdrawal = await withdrawDB
+//       .findOne({
+//         user_id: userId,
+//         status: 0,
+//       })
+//       .sort({ created_at: -1 });
+//     if (!latestWithdrawal) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "No pending withdrawal found for this user.",
+//       });
+//     }
+
+//     const user = await usersDB.findById(userId);
+//     if (!user) {
+//       return res.status(400).json({ status: false, message: "Invalid user." });
+//     }
+//     if (user.tfastatus === 1) {
+//       const verified = speakeasy.totp.verify({
+//         secret: user.tfaenablekey,
+//         encoding: "base32",
+//         token: req.body.tfa,
+//         window: 1,
+//       });
+
+//       console.log("Is OTP Verified:", verified);
+
+//       if (!verified) {
+//         return res
+//           .status(400)
+//           .json({ status: false, message: "Invalid 2FA. Please try again." });
+//       }
+//     }
+
+//     if (
+//       moment().isAfter(
+//         moment(latestWithdrawal.expireTime).add(bufferTime, "seconds"),
+//       )
+//     ) {
+//       return res.status(400).json({
+//         status: false,
+//         message: "OTP has expired. Please request an new OTP.",
+//       });
+//       // return res.status(400).json({ status: false, message: 'OTP has expired. Please initiate the withdrawal process again.' });
+//     }
+
+//     const withdrawotp = await withdrawDB.findOne({ withdrawOTP: otp });
+//     console.log("Withdraw OTP from DB:", withdrawotp);
+
+//     if (!withdrawotp || withdrawotp.withdrawOTP !== otp) {
+//       return res
+//         .status(400)
+//         .json({ status: false, message: "Invalid OTP. Please try again." });
+//     }
+
+//     var get_withdraw_fees = await currencyDB.findById(currencyId);
+
+//     // var fees = (get_withdraw_fees.currencySymbol == "USDT") ? get_withdraw_fees.withdrawFee_usdt : (amount * get_withdraw_fees.withdrawFee) / 100;
+//     var fees = +get_withdraw_fees.withdrawFee;
+//     var receiveamount = amount - fees;
+
+//     const { exceedsLimit, totalAmountWithdrawn } = await checkWithdrawalLimit(
+//       userId,
+//       currencyId,
+//       receiveamount,
+//     );
+//     if (exceedsLimit) {
+//       const currency = await currencyDB.findById(currencyId);
+//       if (!currency) {
+//         return res
+//           .status(400)
+//           .json({ status: false, message: "Currency not found." });
+//       }
+//       await sendAdminNotification(
+//         user.name,
+//         currency.currencySymbol,
+//         receiveamount,
+//         totalAmountWithdrawn,
+//         withdrawalAddress,
+//       );
+//       var notification = {
+//         to_user_id: req.userId,
+//         status: 0,
+//         message: `Your withdrawal request has been sent to the admin for manual approval.`,
+//         link: "/notificationHistory",
+//       };
+
+//       let notifica = await notify.create(notification);
+//       return res.json({
+//         status: "manual",
+//         message:
+//           "Your withdrawal request has been sent to the admin for manual approval.",
+//       });
+//     } else {
+//       const currency = await currencyDB.findById(currencyId);
+//       if (!currency) {
+//         return res
+//           .status(400)
+//           .json({ status: false, message: "Currency not found." });
+//       }
+
+//       let tokenAddress;
+//       let tokenDecimal;
+//       if (networkType === "BEP20") {
+//         tokenAddress = currency.contractAddress_bep20;
+//         tokenDecimal = currency.coinDecimal_bep20;
+//       } else if (networkType === "ERC20") {
+//         tokenAddress = currency.contractAddress_erc20;
+//         tokenDecimal = currency.coinDecimal_erc20;
+//       } else if (networkType === "TRC20") {
+//         console.log("heeeeeeeeee");
+//         tokenAddress = currency.contractAddress_trc20;
+//         tokenDecimal = currency.coinDecimal_trc20;
+//       }
+
+//       const walletData = {
+//         userId: userId,
+//         // amount: amount,
+//         totalamount: amount,
+//         amount: receiveamount,
+//         receiveamount: receiveamount,
+//         fees: fees,
+//         currency: currencyId,
+//         address: withdrawalAddress,
+//         networkType,
+//         tokenAddress,
+//         tokenDecimal,
+//       };
+
+//       console.log("Wallet Data:", walletData);
+
+//       let privateKeyShareUrl1;
+//       let privateKeyShareUrl2;
+//       let privateKeyShareUrl3;
+
+//       console.log(
+//         currency.currencySymbol,
+//         networkType,
+//         "currency.currencySymbol",
+//       );
+
+//       if (currency.currencySymbol === "BTC") {
+//         privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/1`;
+//         privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/2`;
+//         privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShare/3`;
+//       } else if (
+//         currency.currencySymbol === "ETH" ||
+//         currency.currencySymbol === "BNB" ||
+//         networkType === "ERC20" ||
+//         networkType === "BEP20"
+//       ) {
+//         // } else if (currency.currencySymbol === 'ETH' || currency.currencySymbol === 'BNB' || (currency.currencySymbol === 'USDT'&& networkType==='ERC20') || (currency.currencySymbol === 'USDT'&& networkType==='BEP20') || (currency.currencySymbol === 'USDT'&& networkType==='TRC20') || currency.currencySymbol === 'USDT') {
+//         privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/1`;
+//         privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/2`;
+//         privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareETH/3`;
+//       } else if (currency.currencySymbol === "TRX" || networkType === "TRC20") {
+//         console.log("sssssssssssssssssssssssssss");
+//         privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/1`;
+//         privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/2`;
+//         privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareTRX/3`;
+//       } else if (currency.currencySymbol === "XRP") {
+//         privateKeyShareUrl1 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/1`;
+//         privateKeyShareUrl2 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/2`;
+//         privateKeyShareUrl3 = `${process.env.ADMIN_CALL}/api/admin/getPrivateKeyShareXRP/3`;
+//       } else {
+//         return res
+//           .status(400)
+//           .json({ status: false, message: "Unsupported currency." });
+//       }
+
+//       console.log("PrivateKeyShare URL 1:", privateKeyShareUrl1);
+//       console.log("PrivateKeyShare URL 2:", privateKeyShareUrl2);
+//       console.log("PrivateKeyShare URL 3:", privateKeyShareUrl3);
+
+//       const [share1, share2, share3] = await Promise.all([
+//         getSignedPrivateKeyShare(privateKeyShareUrl1, req),
+//         getSignedPrivateKeyShare(privateKeyShareUrl2, req),
+//         getSignedPrivateKeyShare(privateKeyShareUrl3, req),
+//       ]);
+
+//       if (!share1 || !share2 || !share3) {
+//         throw new Error("One or more shares are undefined or invalid");
+//       }
+
+//       const shares = [share3, share1, share2];
+//       const reconstructedKey = secrets.hex2str(secrets.combine(shares));
+//       console.log(reconstructedKey, "??????????????????");
+//       if (!reconstructedKey) {
+//         return res
+//           .status(500)
+//           .json({ status: false, message: "Something went wrong!" });
+//       }
+
+//       let walletServiceUrl;
+//       let walletData2;
+
+//       var symbol =
+//         networkType === "BEP20"
+//           ? "BNB"
+//           : networkType === "ERC20"
+//             ? "ETH"
+//             : networkType === "TRC20"
+//               ? "TRX"
+//               : currency.currencySymbol;
+//       var get_admin_address = await cryptoAddressDB.find({
+//         type: 1,
+//         currencySymbol: symbol,
+//       });
+//       console.log(get_admin_address, "get_admin_address");
+
+//       if (currency.currencySymbol === "BTC") {
+//         // walletServiceUrl = 'http://localhost:3001/api/v1/bitcoin/mainnet/btctransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/bitcoin/mainnet/btctransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           fromPrivateKeyWIF: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount,
+//           chain: currency.currencySymbol,
+//         };
+//       } else if (currency.currencySymbol === "TRX" || networkType === "TRC20") {
+//         console.log("entered into TRX function");
+//         //walletServiceUrl = 'http://localhost:3001/api/v1/trxNetwork/mainnet/trxTransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/trxNetwork/mainnet/trxTransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           privateKey: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount * 1e6,
+//           tokenAddress: walletData.tokenAddress,
+//           tokenDecimal: walletData.tokenDecimal,
+//         };
+//       } else if (networkType === "ERC20" || networkType === "BEP20") {
+//         //walletServiceUrl = 'http://localhost:3001/api/v1/evmChain/mainnet/ethTransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/ethTransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           fromPrivateKey: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount,
+//           chain: walletData.networkType === "ERC20" ? "ETH" : "BNB",
+//           tokenAddress: walletData.tokenAddress,
+//           tokenDecimal: walletData.tokenDecimal,
+//         };
+//       } else if (currency.currencySymbol === "BNB") {
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/bnb_Transfer`;
+//         // walletServiceUrl = `http://localhost:3001/api/v1/evmChain/mainnet/bnb_Transfer`
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           fromPrivateKey: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount,
+//           chain: currency.currencySymbol,
+//           tokenAddress: walletData.tokenAddress,
+//         };
+//       } else if (currency.currencySymbol === "ETH") {
+//         //walletServiceUrl = 'http://localhost:3001/api/v1/evmChain/mainnet/ethTransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/evmChain/mainnet/ethTransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           fromPrivateKey: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount,
+//           chain: currency.currencySymbol,
+//         };
+//       } else if (currency.currencySymbol === "TRX") {
+//         console.log("entered into TRX function");
+//         //walletServiceUrl = 'http://localhost:3000/api/v1/trxNetwork/mainnet/trxTransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/trxNetwork/mainnet/trxTransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           privateKey: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount * 1e6,
+//           tokenAddress: walletData.tokenAddress,
+//         };
+//       } else if (currency.currencySymbol === "XRP") {
+//         //walletServiceUrl = 'http://localhost:3001/api/v1/xrpNetwork/mainnet/xrpTransfer';
+//         walletServiceUrl = `${process.env.WALLETCALL}/api/v1/xrpNetwork/mainnet/xrpTransfer`;
+
+//         walletData2 = {
+//           fromAddress: get_admin_address[0].address,
+//           fromSecret: reconstructedKey,
+//           toAddress: walletData.address,
+//           amount: walletData.amount,
+//         };
+//       } else {
+//         return res
+//           .status(400)
+//           .json({ status: false, message: "Unsupported currency." });
+//       }
+
+//       console.log("Wallet Service URL:", walletServiceUrl);
+//       console.log("Wallet Data 2:", walletData2);
+//       console.log("before calling");
+//       const signature = await generateSignature2(walletData2);
+//       console.log("after calling");
+//       const walletResponse = await axios.post(walletServiceUrl, walletData2, {
+//         headers: {
+//           "Content-Type": "application/json",
+//           "X-Signature": signature,
+//         },
+//         // timeout: 7000
+//         timeout: 70000,
+//       });
+//       console.log("walletResponse", walletResponse.data);
+//       if (walletResponse && walletResponse.data.txId) {
+//         const updatedWithdrawal = await withdrawDB.findOneAndUpdate(
+//           { user_id: walletData.userId, status: 0, _id: withdrawotp._id },
+//           {
+//             $set: {
+//               status: 2,
+//               txn_id: walletResponse.data.txId,
+//               amount: walletData.amount,
+//               receiveamount: walletData.receiveamount,
+//               fees: walletData.fees,
+//               withdraw_address: walletData.address,
+//             },
+//           },
+//           { new: true, useFindAndModify: false },
+//         );
+
+//         console.log("Updated Withdrawal:", updatedWithdrawal);
+//         if (updatedWithdrawal) {
+//           const userwallet_update = await userWalletDB.findOneAndUpdate(
+//             {
+//               userId: walletData.userId,
+//               "wallets.currencySymbol": currency.currencySymbol,
+//             },
+//             { $inc: { "wallets.$.amount": -walletData.totalamount } },
+//           );
+//           const adminwallet_update = await adminwalletDB.findOneAndUpdate(
+//             {
+//               userId: "66c35de1f9ce3961586ce5fd",
+//               "wallets.currencySymbol": currency.currencySymbol,
+//             },
+//             { $inc: { "wallets.$.amount": -walletData.totalamount } },
+//           );
+//           console.log(adminwallet_update, "adminwallet_update");
+
+//           var profitObj = {
+//             type: "Withdraw",
+//             user_id: walletData.userId,
+//             currencyid: currency._id,
+//             fees: fees,
+//             fullfees: fees,
+//             orderid: updatedWithdrawal._id,
+//           };
+//           let storeAdminFee = await profitDB.create(profitObj);
+//           console.log("Updated userwallet_update:bnbnbnbn", userwallet_update);
+
+//           var USERNAME = user.displayname;
+//           //   var AMOUNT = walletResponse.data.amount
+//           var AMOUNT = walletData.totalamount;
+//           var CURRENCY = walletData.totalamount;
+//           var Transaction_ID = walletResponse.data.txId;
+
+//           var EXPLOREURL =
+//             currency.currencySymbol === "BNB"
+//               ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
+//               : currency.currencySymbol === "ETH"
+//                 ? `${process.env.EXPLORER_LINK}/${walletResponse.data.txId}`
+//                 : currency.currencySymbol === "XRP"
+//                   ? `${process.env.EXPLORER_XRP}/${walletResponse.data.txId}`
+//                   : currency.currencySymbol === "BTC"
+//                     ? `${process.env.EXPLORER_BTC}/${walletResponse.data.txId}`
+//                     : currency.currencySymbol === "TRX"
+//                       ? `${process.env.EXPLORER_TRX}/${walletResponse.data.txId}`
+//                       : currency.currencySymbol === "USDT" &&
+//                           networkType === "TRC20"
+//                         ? `${process.env.EXPLORER_TRX}/${walletResponse.data.txId}`
+//                         : currency.currencySymbol === "USDT" &&
+//                             networkType === "ERC20"
+//                           ? `${process.env.EXPLORER_LINK}/${walletResponse.data.txId}`
+//                           : currency.currencySymbol === "USDT" &&
+//                               networkType === "BEP20"
+//                             ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
+//                             : currency.currencySymbol === "VTX" &&
+//                                 networkType === "BEP20"
+//                               ? `${process.env.EXPLORER_BNB}/${walletResponse.data.txId}`
+//                               : "";
+//           var DATE = moment(latestWithdrawal.created_at).format("lll");
+//           var findDetails = await antiPhishing.findOne({ userid: user._id });
+//           var APCODE = `Antiphising Code - ${
+//             findDetails ? findDetails.APcode : ""
+//           }`;
+//           let resData = await mailtempDB.findOne({
+//             key: "CRYPTO-WITHDRAW-VERIFIED",
+//           });
+//           var etempdataDynamic = resData.body
+//             .replace(/###USERNAME###/g, USERNAME)
+//             .replace(/###AMOUNT###/g, AMOUNT)
+//             .replace(/###EXPLOREURL###/g, EXPLOREURL)
+//             .replace(
+//               /###CURRENCY###/g,
+//               currency.currencySymbol != undefined
+//                 ? currency.currencySymbol
+//                 : "",
+//             )
+//             .replace(/###TRANSACTION_ID###/g, Transaction_ID)
+//             .replace(/###DATE###/g, DATE)
+//             .replace(
+//               /###APCODE###/g,
+//               findDetails && findDetails.Status == "true" ? APCODE : "",
+//             );
+
+//           var mailRes = await mail.sendMail({
+//             from: {
+//               name: process.env.FROM_NAME,
+//               address: process.env.FROM_EMAIL,
+//             },
+
+//             to: common.decrypt(user.email),
+//             subject: resData.Subject,
+//             html: etempdataDynamic,
+//           });
+
+//           var notification = {
+//             to_user_id: req.userId,
+//             status: 0,
+//             message: `Transaction is being processed. Please wait for confirmation..`,
+//             link: "/notificationHistory",
+//           };
+//           let notifica = await notify.create(notification);
+
+//           if (mailRes != null) {
+//             return res.json({
+//               status: true,
+//               message:
+//                 "Transaction is being processed. Please wait for confirmation..",
+//               data: walletResponse.data,
+//             });
+//           }
+//         } else {
+//           return res
+//             .status(500)
+//             .json({ message: "Failed to update withdrawal status." });
+//         }
+//       } else {
+//         const updatedWithdrawal = await withdrawDB.findOneAndUpdate(
+//           { user_id: walletData.userId, status: 0, _id: withdrawotp._id },
+//           {
+//             $set: {
+//               status: 3,
+//             },
+//           },
+//           { new: true, useFindAndModify: false },
+//         );
+
+//         await withdraw_cancel_email(
+//           latestWithdrawal.currency_symbol,
+//           user.displayname,
+//           latestWithdrawal.amount,
+//           common.decrypt(user.email),
+//           user._id,
+//         );
+//         var notification = {
+//           to_user_id: req.userId,
+//           status: 0,
+//           message: `Transaction Canceled`,
+//           link: "/notificationHistory",
+//         };
+//         let notifica = await notify.create(notification);
+//         return res.status(200).json({
+//           status: "TransactionCanceled",
+//           message: "Transaction Canceled",
+//         });
+//       }
+//     }
+//   } catch (error) {
+//     console.log(error, "eroroorerorooreroroorerorooreroroor");
+//     const latestWithdrawal = await withdrawDB
+//       .findOne({
+//         user_id: req.userId,
+//         status: 0,
+//       })
+//       .sort({ created_at: -1 });
+//     const user = await usersDB.findById(req.userId);
+
+//     const updatedWithdrawal = await withdrawDB.findOneAndUpdate(
+//       { user_id: req.userId, status: 0 },
+//       {
+//         $set: {
+//           status: 3,
+//         },
+//       },
+//       { new: true, useFindAndModify: false },
+//     );
+//     console.log("updatedWithdrawal", updatedWithdrawal);
+
+//     console.error("Error in processWithdrawal:", error);
+//     await withdraw_cancel_email(
+//       latestWithdrawal.currency_symbol,
+//       user.displayname,
+//       latestWithdrawal.amount,
+//       common.decrypt(user.email),
+//       user._id,
+//       latestWithdrawal.created_at,
+//     );
+//     return res
+//       .status(200)
+//       .json({ status: "TransactionCanceled", message: "Transaction Canceled" });
+//   }
+// }
 
 async function processWithdrawal2(req, res) {
     try {

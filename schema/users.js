@@ -79,6 +79,18 @@ const UserSchema = mongoose.Schema({
     },
   ],
   vipBadge: { type: Boolean, default: false },
+  // depasifyIdentityId: { type: String, default: "" },
+  depasifyAccountId: { type: String, default: "" },
+  depasifyIdentificationId: { type: String, default: "" },
+  // depasifyWalletId: { type: String, default: "" },
+  depasifyWallets: {
+    type: Object,
+    default: {},
+  },
+  tanganyLastBalances: {
+    type: Object,
+    default: {},
+  },
 });
 UserSchema.plugin(mongoosePaginate);
 

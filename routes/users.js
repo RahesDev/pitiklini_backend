@@ -1,4 +1,5 @@
 var express = require("express");
+require("dotenv").config();
 var router = express.Router();
 const Stripe = require("stripe");
 var common = require("../helper/common");
@@ -90,6 +91,9 @@ const vipUserDB = require("../schema/vipUser");
 
 const { getOperators, getPlans } = require("../utils/topupLoader");
 const qs = require("qs");
+
+let custodyToken = null;
+let custodyTokenExpiry = 0;
 
 const convertUsdToInr = async (usdValue) => {
   try {
@@ -12341,92 +12345,689 @@ router.post(
   }
 );
 
+// router.get("/get_deposit_list", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const userWallets = await cryptoAddressDB.find({ user_id: req.userId });
+//     const btcWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "BTC"
+//     );
+//     const ethWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "ETH"
+//     );
+//     const bnbWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "BNB"
+//     );
+//     const arbWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "ARB"
+//     );
+//     const trxWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "TRX"
+//     );
+//     const xrpWallets = userWallets.filter(
+//       (wallet) => wallet.currencySymbol === "XRP"
+//     );
+
+//     if (btcWallets.length > 0) {
+//       var btc_transaction = btcdeposit(
+//         btcWallets[0].address,
+//         req.userId,
+//         btcWallets[0].currencySymbol,
+//         btcWallets[0].currency
+//       );
+//     }
+//     if (ethWallets.length > 0) {
+//       var eth_transaction = Transaction.ethdeposit(
+//         ethWallets[0].address,
+//         req.userId,
+//         ethWallets[0].currencySymbol,
+//         ethWallets[0].currency
+//       );
+//       var eth_token_transaction = Transaction.get_erc20_token(
+//         ethWallets[0].address,
+//         req.userId
+//       );
+//     }
+//     if (bnbWallets.length > 0) {
+//       var bnb_transaction = Transaction.bnbdeposit(
+//         bnbWallets[0].address,
+//         req.userId,
+//         bnbWallets[0].currencySymbol,
+//         bnbWallets[0].currency
+//       );
+//       var bnb_token_transaction = Transaction.get_bnb_token(
+//         req.userId,
+//         bnbWallets[0].address
+//       );
+//     }
+//     // if (arbWallets.length > 0) {
+//     //   var arb_transaction = Transaction.arbdeposit(
+//     //     arbWallets[0].address,
+//     //     req.userId,
+//     //     arbWallets[0].currencySymbol,
+//     //     arbWallets[0].currency
+//     //   );
+//     // }
+//     if (trxWallets.length > 0) {
+//       var trx_transaction = Transaction.trxdeposit(
+//         trxWallets[0].address,
+//         req.userId,
+//         trxWallets[0].currencySymbol,
+//         trxWallets[0].currency
+//       );
+//       var trx_token_transaction = Transaction.get_trc20_token(
+//         trxWallets[0].address,
+//         req.userId
+//       );
+//     }
+//     if (xrpWallets.length > 0) {
+//       var xrp_transaction = Transaction.xrp_deposit(
+//         xrpWallets[0].address,
+//         req.userId,
+//         xrpWallets[0].currencySymbol,
+//         xrpWallets[0].currency
+//       );
+//     }
+//   } catch (err) {
+//     console.log("get_deposit_list_err", err, "get_deposit_list");
+//   }
+// });
+
+async function getCustodyToken() {
+  if (custodyToken && Date.now() < custodyTokenExpiry) {
+    return custodyToken;
+  }
+
+  const clientId = process.env.TANGANY_CUSTODY_CLIENT_ID;
+  const clientSecret = process.env.TANGANY_CUSTODY_CLIENT_SECRET;
+
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
+    "base64",
+  );
+
+  const response = await axios.post(
+    "https://auth.tangany.com/2.0",
+    new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "https://auth.tangany.com/custody-service/.default",
+    }),
+    {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+    },
+  );
+
+  custodyToken = response.data.access_token;
+  custodyTokenExpiry = Date.now() + (response.data.expires_in - 60) * 1000;
+
+  console.log("custody token success =>", custodyToken);
+
+  return custodyToken;
+}
+
+async function getWalletTransactions(walletId) {
+  const token = await getCustodyToken();
+
+  const res = await axios.get(
+    `https://api.tangany.com/custody/wallets/${walletId}/transactions`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "tangany-version": "3",
+      },
+    },
+  );
+
+  return res.data;
+}
+
+async function getWalletAssets(walletId) {
+  const token = await getCustodyToken();
+
+  const res = await axios.get(
+    `https://api.tangany.com/custody/wallets/${walletId}/balances`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "tangany-version": "3",
+      },
+    }
+  );
+
+  console.log("wallet assets-->>", res.data);
+  return res.data;
+}
+
+// router.get("/get_deposit_list", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const user = await usersDB.findById(req.userId);
+
+//     if (!user?.tanganyWalletId) {
+//       return res.json({ status: false, Message: "Wallet not found" });
+//     }
+
+//     const txs = await getWalletTransactions(user.tanganyWalletId);
+
+//     const txList = Array.isArray(txs?.items)
+//       ? txs.items
+//       : Array.isArray(txs)
+//         ? txs
+//         : [];
+
+//     for (const tx of txList) {
+//       if (tx.direction !== "incoming") continue;
+//       if (!["confirmed", "completed", "success"].includes(tx.status)) continue;
+
+//       const exists = await depositDB.findOne({ txnid: tx.id });
+//       if (exists) continue;
+
+//       const amount = Number(tx.amount || 0);
+//       const currency = tx.asset || tx.currency;
+
+//       const depositObj = await depositDB.create({
+//         userId: user._id,
+//         currencySymbol: currency,
+//         amount,
+//         txnid: tx.id,
+//         status: tx.status,
+//       });
+//       console.log("depositObj-->>", depositObj);
+
+//       await userWalletDB.updateOne(
+//         {
+//           userId: user._id,
+//           "wallets.currencySymbol": currency,
+//         },
+//         {
+//           $inc: { "wallets.$.amount": amount },
+//         },
+//       );
+
+//       // const userNowUse = user._id;
+
+//       // const wallet = await userWalletDB.findOne({
+//       //   userId:userNowUse,
+//       //   "wallets.currencySymbol": currency,
+//       // });
+
+//       //         const idx = wallet.wallets.findIndex((w) =>
+//       //           w.currencySymbol.equals(currency),
+//       //         );
+
+//       //   if (idx === -1) continue;
+
+//       //  await email_function(
+//       //    user._id,
+//       //    currency,
+//       //    tx.id,
+//       //    amount,
+//       //    wallet.wallets[idx].amount,
+//       //    depositObj.createddate,
+//       //    currency,
+//       //  );
+//     }
+
+//     const deposits = await depositDB
+//       .find({ userId: user._id })
+//       .sort({ createdDate: -1 });
+
+//     return res.json({ status: true, data: deposits });
+//   } catch (err) {
+//     console.log("get_deposit_list_err", err);
+//     return res.json({ status: false, Message: "Error fetching deposits" });
+//   }
+// });
+
 router.get("/get_deposit_list", common.tokenmiddleware, async (req, res) => {
   try {
-    const userWallets = await cryptoAddressDB.find({ user_id: req.userId });
-    const btcWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "BTC"
-    );
-    const ethWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "ETH"
-    );
-    const bnbWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "BNB"
-    );
-    const arbWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "ARB"
-    );
-    const trxWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "TRX"
-    );
-    const xrpWallets = userWallets.filter(
-      (wallet) => wallet.currencySymbol === "XRP"
-    );
+    //  const user = await usersDB.findById(req.userId);
 
-    if (btcWallets.length > 0) {
-      var btc_transaction = btcdeposit(
-        btcWallets[0].address,
-        req.userId,
-        btcWallets[0].currencySymbol,
-        btcWallets[0].currency
-      );
-    }
-    if (ethWallets.length > 0) {
-      var eth_transaction = Transaction.ethdeposit(
-        ethWallets[0].address,
-        req.userId,
-        ethWallets[0].currencySymbol,
-        ethWallets[0].currency
-      );
-      var eth_token_transaction = Transaction.get_erc20_token(
-        ethWallets[0].address,
-        req.userId
-      );
-    }
-    if (bnbWallets.length > 0) {
-      var bnb_transaction = Transaction.bnbdeposit(
-        bnbWallets[0].address,
-        req.userId,
-        bnbWallets[0].currencySymbol,
-        bnbWallets[0].currency
-      );
-      var bnb_token_transaction = Transaction.get_bnb_token(
-        req.userId,
-        bnbWallets[0].address
-      );
-    }
-    // if (arbWallets.length > 0) {
-    //   var arb_transaction = Transaction.arbdeposit(
-    //     arbWallets[0].address,
-    //     req.userId,
-    //     arbWallets[0].currencySymbol,
-    //     arbWallets[0].currency
-    //   );
-    // }
-    if (trxWallets.length > 0) {
-      var trx_transaction = Transaction.trxdeposit(
-        trxWallets[0].address,
-        req.userId,
-        trxWallets[0].currencySymbol,
-        trxWallets[0].currency
-      );
-      var trx_token_transaction = Transaction.get_trc20_token(
-        trxWallets[0].address,
-        req.userId
-      );
-    }
-    if (xrpWallets.length > 0) {
-      var xrp_transaction = Transaction.xrp_deposit(
-        xrpWallets[0].address,
-        req.userId,
-        xrpWallets[0].currencySymbol,
-        xrpWallets[0].currency
-      );
-    }
+    //  if (!user?.tanganyWalletId) {
+    //    return res.json({ status: false, Message: "Wallet not found" });
+    //  }
+
+    //  const assets = await getWalletAssets(user.tanganyWalletId);
+    //  const lastBalances = user.tanganyLastBalances || {};
+
+    //  for (const asset of assets.items || []) {
+    //    const currency = asset.assetId;
+    //    const currentBalance = Number(asset.totalBalance || 0);
+    //    const oldBalance = Number(lastBalances[currency] || 0);
+
+    //    if (currentBalance > oldBalance) {
+    //      const depositAmount = currentBalance - oldBalance;
+
+    //      const depositObj = await depositDB.create({
+    //        userId: user._id,
+    //        currencySymbol: currency,
+    //        amount: depositAmount,
+    //        txnid: `sync-${currency}-${Date.now()}`,
+    //        status: "confirmed",
+    //      });
+
+    //      console.log("depositObj --->>>", depositObj);
+
+    //      await userWalletDB.updateOne(
+    //        {
+    //          userId: user._id,
+    //          "wallets.currencySymbol": currency,
+    //        },
+    //        {
+    //          $inc: { "wallets.$.amount": depositAmount },
+    //        },
+    //      );
+
+    //      // const userNowUse = user._id;
+
+    //      // const wallet = await userWalletDB.findOne({
+    //      //   userId:userNowUse,
+    //      //   "wallets.currencySymbol": currency,
+    //      // });
+
+    //      //         const idx = wallet.wallets.findIndex((w) =>
+    //      //           w.currencySymbol.equals(currency),
+    //      //         );
+
+    //      //   if (idx === -1) continue;
+
+    //      //  await email_function(
+    //      //    user._id,
+    //      //    currency,
+    //      //    tx.id,
+    //      //    depositAmount,
+    //      //    wallet.wallets[idx].amount,
+    //      //    depositObj.createddate,
+    //      //    currency,
+    //      //  );
+    //    }
+
+    //    lastBalances[currency] = currentBalance;
+    //  }
+
+    //  user.tanganyLastBalances = lastBalances;
+    //  await user.save();
+
+    //  const deposits = await depositDB
+    //    .find({ userId: user._id })
+    //    .sort({ createdDate: -1 });
+
+    //  return res.json({ status: true, data: deposits });
   } catch (err) {
-    console.log("get_deposit_list_err", err, "get_deposit_list");
+    console.log("get_deposit_list_err", err);
+    return res.json({ status: false, Message: "Error fetching deposits" });
   }
 });
+
+// router.post("/depasify-webhook", async (req, res) => {
+//   try {
+//     console.log("WEBHOOK DATA --->", JSON.stringify(req.body, null, 2));
+
+//     const event = req.body;
+
+//     // 🔥 Example structure (depends on Depasify)
+//     const walletId = event.wallet_id;
+//     const amount = Number(event.amount);
+//     const txid = event.txid;
+//     const network = event.network;
+
+//     // 🔍 Find user by walletId
+//     const user = await usersDB.findOne({
+//       "depasifyWallets.TRON.walletId": walletId,
+//     }) ||
+//     await usersDB.findOne({
+//       "depasifyWallets.ETHEREUM.walletId": walletId,
+//     }) ||
+//     await usersDB.findOne({
+//       "depasifyWallets.BITCOIN.walletId": walletId,
+//     }) ||
+//     await usersDB.findOne({
+//       "depasifyWallets.BSC.walletId": walletId,
+//     });
+
+//     if (!user) {
+//       console.log("User not found for wallet:", walletId);
+//       return res.sendStatus(200);
+//     }
+
+//     // 🚫 prevent duplicate
+//     const existing = await depositDB.findOne({ txnid: txid });
+//     if (existing) {
+//       console.log("Duplicate txn ignored");
+//       return res.sendStatus(200);
+//     }
+
+//     // 💾 store deposit
+//     await depositDB.create({
+//       userId: user._id,
+//       currencySymbol: network,
+//       amount,
+//       txnid: txid,
+//       status: "confirmed",
+//     });
+
+//     // 💰 update wallet balance
+//     await userWalletDB.updateOne(
+//       {
+//         userId: user._id,
+//         "wallets.currencySymbol": network,
+//       },
+//       {
+//         $inc: { "wallets.$.amount": amount },
+//       }
+//     );
+
+//     console.log("Deposit processed ✅");
+
+//     return res.sendStatus(200);
+//   } catch (err) {
+//     console.log("Webhook error:", err);
+//     return res.sendStatus(500);
+//   }
+// });
+
+
+//lastone
+// router.post("/depasify-webhook", async (req, res) => {
+//   try {
+//     console.log("WEBHOOK:", req.body);
+
+//     const { type, wallet_id, amount, txid, network } = req.body;
+
+//     if (type !== "deposit.confirmed") {
+//       return res.sendStatus(200);
+//     }
+
+//     // 🔍 find user
+//     const users = await usersDB.find({ depasifyWallets: { $exists: true } });
+
+//     let foundUser = null;
+//     let currency = null;
+
+//     for (const user of users) {
+//       for (const key in user.depasifyWallets) {
+//         if (user.depasifyWallets[key].walletId === wallet_id) {
+//           foundUser = user;
+//           currency = key;
+//           break;
+//         }
+//       }
+//       if (foundUser) break;
+//     }
+
+//     if (!foundUser) {
+//       console.log("User not found for wallet");
+//       return res.sendStatus(200);
+//     }
+
+//     // 🪙 normalize currency
+//     const currencyMap = {
+//       TRON: "TRX",
+//       ETHEREUM: "ETH",
+//       BITCOIN: "BTC",
+//     };
+
+//     const currencySymbol = currencyMap[currency] || currency;
+
+//     // 🚫 duplicate check
+//     const exists = await depositDB.findOne({ txnid: txid });
+//     if (exists) {
+//       console.log("Duplicate txn ignored");
+//       return res.sendStatus(200);
+//     }
+
+//     // 💾 save deposit
+//     const depositObj = await depositDB.create({
+//       userId: foundUser._id,
+//       currencySymbol,
+//       amount: Number(amount),
+//       txnid: txid,
+//       status: "confirmed",
+//     });
+
+//     // 💰 update wallet
+//     await userWalletDB.updateOne(
+//       {
+//         userId: foundUser._id,
+//         "wallets.currencySymbol": currencySymbol,
+//       },
+//       {
+//         $inc: { "wallets.$.amount": Number(amount) },
+//       },
+//     );
+
+//     // 📊 get updated wallet
+//     // const wallet = await userWalletDB.findOne({
+//     //   userId: foundUser._id,
+//     //   "wallets.currencySymbol": currencySymbol,
+//     // });
+
+//     // let updatedBalance = 0;
+
+//     // if (wallet) {
+//     //   const w = wallet.wallets.find((w) => w.currencySymbol === currencySymbol);
+//     //   updatedBalance = w?.amount || 0;
+//     // }
+
+//     // // 📧 send email
+//     // try {
+//     //   await email_function(
+//     //     foundUser._id,
+//     //     currencySymbol,
+//     //     txid,
+//     //     Number(amount),
+//     //     updatedBalance,
+//     //     depositObj.createdDate,
+//     //     network,
+//     //   );
+//     //   console.log("Email sent ✅");
+//     // } catch (emailErr) {
+//     //   console.log("Email error:", emailErr);
+//     // }
+
+//     console.log("Deposit processed ✅");
+//     return res.sendStatus(200);
+//   } catch (err) {
+//     console.log("Webhook error:", err);
+//     return res.sendStatus(500);
+//   }
+// });
+
+router.post("/depasify-webhook", async (req, res) => {
+  try {
+    console.log("DEPASIFY WEBHOOK:", JSON.stringify(req.body, null, 2));
+
+    const { type } = req.body;
+
+        const event = req.body?.data?.event;
+        const attributes = req.body?.data?.attributes;
+
+    // ======================================================
+    // ✅ 1. KYC VERIFIED
+    // ======================================================
+    if (event === "identification_verified") {
+      const { status, external_user_uuid, identification_id } = attributes;
+
+      const user = await usersDB.findById(external_user_uuid);
+
+      if (!user) {
+        console.log("KYC User not found");
+        return res.sendStatus(200);
+      }
+
+      let kycstatus = 0;
+
+      if (status === "verified" || status === "approved") kycstatus = 1;
+      else if (status === "pending") kycstatus = 2;
+      else kycstatus = 0;
+
+      await usersDB.updateOne(
+        { _id: user._id },
+        { kycstatus, depasifyIdentificationId: identification_id },
+      );
+
+      console.log("KYC Updated Successfully:", status);
+
+      // ✅ Optional Email
+      // if (status === "approved") {
+      //   await mail.sendMail({
+      //     from: {
+      //       name: process.env.FROM_NAME,
+      //       address: process.env.FROM_EMAIL,
+      //     },
+      //     to: common.decrypt(user.email),
+      //     subject: "KYC Approved",
+      //     html: `<p>Your KYC has been successfully approved.</p>`,
+      //   });
+      // }
+
+      return res.sendStatus(200);
+    }
+
+    // ======================================================
+    // ✅ 2. DEPOSIT CONFIRMED
+    // ======================================================
+    if (type === "deposit.confirmed") {
+      const { wallet_id, amount, txid } = req.body;
+
+      const users = await usersDB.find({ depasifyWallets: { $exists: true } });
+
+      let foundUser = null;
+      let currency = null;
+
+      for (const user of users) {
+        for (const key in user.depasifyWallets) {
+          if (user.depasifyWallets[key].walletId === wallet_id) {
+            foundUser = user;
+            currency = key;
+            break;
+          }
+        }
+        if (foundUser) break;
+      }
+
+      if (!foundUser) {
+        console.log("Deposit user not found");
+        return res.sendStatus(200);
+      }
+
+      // 🪙 normalize currency
+      const currencyMap = {
+        TRON: "TRX",
+        ETHEREUM: "ETH",
+        BITCOIN: "BTC",
+      };
+
+      const currencySymbol = currencyMap[currency] || currency;
+
+      const exists = await depositDB.findOne({ txnid: txid });
+      if (exists) {
+        console.log("Duplicate deposit ignored");
+        return res.sendStatus(200);
+      }
+
+      await depositDB.create({
+        userId: foundUser._id,
+        currencySymbol,
+        amount: Number(amount),
+        txnid: txid,
+        status: "confirmed",
+      });
+
+      await userWalletDB.updateOne(
+        {
+          userId: foundUser._id,
+          "wallets.currencySymbol": currencySymbol,
+        },
+        {
+          $inc: { "wallets.$.amount": Number(amount) },
+        },
+      );
+
+      // 📊 get updated wallet
+      // const wallet = await userWalletDB.findOne({
+      //   userId: foundUser._id,
+      //   "wallets.currencySymbol": currencySymbol,
+      // });
+
+      // let updatedBalance = 0;
+      // if (wallet) {
+      //   const w = wallet.wallets.find((w) => w.currencySymbol === currencySymbol);
+      //   updatedBalance = w?.amount || 0;
+      // }
+
+      // // 📧 send email
+     // try {
+       //   await email_function(
+        //     foundUser._id,
+         //     currencySymbol,
+         //     txid,
+      //     Number(amount),
+      //     updatedBalance,
+       //     depositObj.createdDate,
+      //     network,
+       //   );
+       //   console.log("Email sent ✅");
+       // } catch (emailErr) {
+      //   console.log("Email error:", emailErr);
+      // }
+
+      console.log("Deposit processed ✅");
+
+      return res.sendStatus(200);
+    }
+
+    return res.sendStatus(200);
+  } catch (err) {
+    console.log("Webhook Error:", err);
+    return res.sendStatus(500);
+  }
+});
+
+const email_function = async (userid,currencySymbol,txhash,amount,balance,date,network)=>{
+  try{
+    console.log(userid,currencySymbol,txhash,amount,balance,date,network,"userid,currencySymbol,txhash,amount,balance,date,network")
+    var getuser= await usersDB.findOne({_id:userid})
+
+    var findDetails = await antiPhishing.findOne({ userid: userid });
+    var APCODE = `Antiphising Code - ${findDetails ? findDetails.APcode : ""}`
+
+    mailtempDB
+    .findOne({ key: "DEPOSIT_FUNCTION" })
+    .exec(function (err1, resData) {
+      if (resData == null) {
+        res.status(400).json({ message: "Email not sent" });
+      } else {
+        var etempdataDynamic = resData.body
+          .replace(/###USERNAME###/g, getuser.displayname)
+          .replace(/###CURRENCY_SYMBOL###/g,currencySymbol)
+          .replace(/###TX_HASH###/g, txhash) 
+          .replace(/###AMOUNT###/g, amount) 
+          .replace(/###BALANCE###/g, balance) 
+          .replace(/###DATE###/g, date) 
+          .replace(/###APCODE###/g, findDetails && findDetails.Status == "true" ? APCODE : "")
+          .replace(/###NETWORK###/g, network==""||network==null || network==undefined ? "" : `NetWork:${network}`);
+          console.log(etempdataDynamic,"etempdataDynamic",common.decrypt( getuser.email))
+        mail.sendMail(
+          {
+            from: {
+              name: process.env.FROM_NAME,
+              address: process.env.FROM_EMAIL,
+            },
+          
+            to:common.decrypt( getuser.email),
+            subject: resData.Subject,
+            html: etempdataDynamic,
+          },
+          async function (mailRes) {
+           console.log()
+          })}})
+  }catch(err){
+    console.log(err,"-------==-")
+  }
+  }
 
 const fetchCurrentMarketData = async (currencySymbol) => {
   try {

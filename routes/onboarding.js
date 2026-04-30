@@ -2,6 +2,7 @@ var express = require("express");
 var mongoose = require("mongoose");
 var router = express.Router();
 var common = require("../helper/common");
+require("dotenv").config();
 
 var usersDB = require("../schema/users");
 const dns = require('dns');
@@ -34,6 +35,127 @@ const MAX_ATTEMPTS = 5;
 
 //Registration//
 
+const axios = require("axios");
+const BASE_URL = "https://sandbox.depasify.com/api/v1";
+
+let depasifyToken = null;
+let depasifyExpiry = 0;
+
+async function getDepasifyToken() {
+  if (depasifyToken && Date.now() < depasifyExpiry) {
+    return depasifyToken;
+  }
+
+  const res = await axios.post(
+    `${BASE_URL}/sign_in`,
+    {
+      email: process.env.DEPASIFY_EMAIL,
+      password: process.env.DEPASIFY_PASSWORD,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    },
+  );
+
+  console.log("LOGIN RESPONSE:", res.data);
+
+  depasifyToken = res.data?.data?.token;
+
+  if (!depasifyToken) {
+    throw new Error("Token not found");
+  }
+
+  depasifyExpiry = Date.now() + 50 * 60 * 1000;
+
+  console.log("depasifyToken -->>", depasifyToken);
+  return depasifyToken;
+}
+
+async function createIdentity(user) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.post(
+    "https://api.depasify.com/identities",
+    {
+      referenceId: user._id.toString(),
+      type: "individual",
+      email: common.decrypt(user.email),
+      firstName: user.displayname,
+      lastName: "User",
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  return res.data.id;
+}
+
+async function createAccount(user) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.post(
+    `${BASE_URL}/accounts`,
+    {
+      reference_id: user._id.toString(),
+      email: common.decrypt(user.email),
+      type: "crypto",
+    },
+    {
+      headers: {
+        Authorization: token, // ✅ FIXED
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  console.log("account response -->", res.data);
+  return res.data;
+}
+
+async function createWallet(accountId, chain) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.post(
+    `${BASE_URL}/accounts/${accountId}/blockchain_wallets`,
+    {
+      name: `${chain.asset}-${chain.blockchain}`, // ✅ REQUIRED
+      kind: "deposits", // ✅ REQUIRED (usually deposits)
+      network: chain.blockchain, // ✅ MUST match allowed list
+    },
+    {
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  console.log("wallet created response->", res.data);
+  return res.data;
+}
+
+async function getWalletAddress(accountId, walletId) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.get(
+    `${BASE_URL}/accounts/${accountId}/blockchain_wallets/${walletId}`,
+    {
+      headers: {
+        Authorization: token, // ✅ FIXED
+      },
+    }
+  );
+
+   console.log("wallet get details:", res.data?.data);
+  return res.data?.data?.address || "";
+}
+
 router.post('/onboardingUser', common.isEmpty, async (req, res) => {
 
   try {
@@ -61,42 +183,135 @@ router.post('/onboardingUser', common.isEmpty, async (req, res) => {
                 uuid: uuidv4().slice(0, 8),
                 emailOtp: fou_digit,
                 otpGenerateAt: new Date(),
+                // walletAddress: req.body.walletAddress || "",
                 // referralCode: process.env.REFCODE + uid,
                 // referralByCode: req.body.referral_code && req.body.referral_code != undefined && req.body.referral_code != null ? req.body.referral_code : "",
               };
               let createUser = await usersDB.create(obj);
               if (createUser) {
-                let resData = await mailtempDB.findOne({ key: "OTP" });
-                const findDetails = await antiPhishing.findOne({ userid: createUser._id });
-                const message = `Antiphising Code - ${findDetails ? findDetails.APcode : ""}`;
-                var etempdataDynamic = resData.body.replace(/###OTP###/g, fou_digit).replace(/###USERNAME###/g, req.body.email).replace(/###APCODE###/g, findDetails && findDetails.Status === "true" ? message : "");;
-                var mailRes = await mail.sendMail({ from: { name: process.env.FROM_NAME, address: process.env.FROM_EMAIL }, to: req.body.email, subject: resData.Subject, html: etempdataDynamic });
-                if (mailRes != null) {
+                // 🔥 DEPASIFY INTEGRATION (SAFE MODE)
+                try {
+                  console.log("createUser entryyy-->>");
+                  const account = await createAccount(createUser);
+                  console.log("Account:", account);
+                  const accountId = account.data.id;
+
+                  const chains = [
+                    { blockchain: "TRON", asset: "USDT" },
+                    { blockchain: "ETHEREUM", asset: "USDT" },
+                    { blockchain: "BITCOIN", asset: "BTC" },
+                    { blockchain: "BSC", asset: "BNB" },
+                  ];
+
+                  let walletMap = {};
+
+                  for (const chain of chains) {
+                    try {
+                      const wallet = await createWallet(accountId, chain);
+                      console.log("Wallet:-", wallet);
+
+                      // const address = await getWalletAddress(
+                      //   accountId,
+                      //   wallet.data.id,
+                      // );
+                      // if (!address) {
+                      //   console.log(`Address not ready for ${chain}`);
+                      // }
+
+                      walletMap[chain.blockchain] = {
+                        walletId: wallet.data.id,
+                        address: wallet.data.address,
+                      };
+                    } catch (err) {
+                     console.log(
+                       `${chain.blockchain} wallet failed FULL ERROR:`,
+                       JSON.stringify(err.response?.data, null, 2),
+                     );
+                    }
+                  }
+
+                  createUser.depasifyAccountId = accountId;
+                  createUser.depasifyWallets = walletMap;
+
+                  await createUser.save();
+                  console.log("createUser final-->>", createUser);
+                } catch (depasifyErr) {
+                  console.log(
+                    "Depasify  Error status:",
+                    depasifyErr.response?.status,
+                  );
+                  console.log(
+                    "Depasify Error data:",
+                    depasifyErr
+                  );
+                }
+                // return;
+                // let resData = await mailtempDB.findOne({ key: "OTP" });
+                // const findDetails = await antiPhishing.findOne({
+                //   userid: createUser._id,
+                // });
+                // const message = `Antiphising Code - ${findDetails ? findDetails.APcode : ""}`;
+                // var etempdataDynamic = resData.body
+                //   .replace(/###OTP###/g, fou_digit)
+                //   .replace(/###USERNAME###/g, req.body.email)
+                //   .replace(
+                //     /###APCODE###/g,
+                //     findDetails && findDetails.Status === "true" ? message : "",
+                //   );
+                // var mailRes = await mail.sendMail({
+                //   from: {
+                //     name: process.env.FROM_NAME,
+                //     address: process.env.FROM_EMAIL,
+                //   },
+                //   to: req.body.email,
+                //   subject: resData.Subject,
+                //   html: etempdataDynamic,
+                // });
+                // if (mailRes != null) {
                   var source = req.headers["user-agent"],
                     ua = useragent.parse(source);
-                  var testip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+                  var testip =
+                    req.headers["x-forwarded-for"] ||
+                    req.connection.remoteAddress;
                   var replaceipAdd = testip.replace("127.0. 0.1 ", "");
                   var geo = await geoip.lookup(replaceipAdd);
-                  let ip_address = req.header("x-forwarded-for") || req.connection.remoteAddress;
+                  let ip_address =
+                    req.header("x-forwarded-for") ||
+                    req.connection.remoteAddress;
 
                   var obj = {
-                    ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: createUser._id,
-                    location: geo !== null ? geo.country : "not found", activitity: "Signup", createdDate: new Date(), modifiedDate: new Date(),
+                    ipAddress: ip_address,
+                    browser: ua.browser,
+                    OS: ua.os,
+                    platform: ua.platform,
+                    useremail: common.encrypt(req.body.email),
+                    user_id: createUser._id,
+                    location: geo !== null ? geo.country : "not found",
+                    activitity: "Signup",
+                    createdDate: new Date(),
+                    modifiedDate: new Date(),
                   };
 
                   let createSession = await userLoginhistoryDB.create(obj);
 
                   if (createSession) {
-                    res.json({ status: true, Message: "Registration successful! An OTP has been sent to your registered email." });
+                    res.json({
+                      status: true,
+                      Message:
+                        "Registration successful! An OTP has been sent to your registered email.",
+                    });
                   } else {
-                    return res.json({ status: false, Message: "Oops!, Please try again later" });
+                    return res.json({
+                      status: false,
+                      Message: "Oops!, Please try again later",
+                    });
                   }
-
-                } else {
-                  return res.json({
-                    Message: "Oops! We couldn’t send the email at this time. Please try again later ",
-                  });
-                }
+                // } else {
+                //   return res.json({
+                //     Message:
+                //       "Oops! We couldn’t send the email at this time. Please try again later ",
+                //   });
+                // }
               } else {
                 return res.json({ status: false, Message: "Oops!, Please try again later" });
               }
@@ -174,12 +389,12 @@ router.post('/login', common.isEmpty, async (req, res) => {
               let findIP = await userLoginhistoryDB.findOne({ user_id: findUser._id, ipAddress: ip_address }).exec();
               console.log(findIP,"---findIP---");
               if (findIP == null) {
-                let resData = await mailtempDB.findOne({ key: "idaddress" });
-                var etempdataDynamic = resData.body.replace(/###USERNAME###/g, req.body.email).replace(/###WHEN###/g, moment().format('YYYY-MM-DD HH:mm:ss')).replace(/###IP###/g, ip_address);
-                var mailRes = await mail.sendMail( { from: {name: process.env.FROM_NAME, address: process.env.FROM_EMAIL},to: req.body.email, subject: resData.Subject, html: etempdataDynamic });                     
-                console.log(mailRes,'--=-=-=-mailRes=-=-');
-                // return;
-                if (mailRes != null) {
+                // let resData = await mailtempDB.findOne({ key: "idaddress" });
+                // var etempdataDynamic = resData.body.replace(/###USERNAME###/g, req.body.email).replace(/###WHEN###/g, moment().format('YYYY-MM-DD HH:mm:ss')).replace(/###IP###/g, ip_address);
+                // var mailRes = await mail.sendMail( { from: {name: process.env.FROM_NAME, address: process.env.FROM_EMAIL},to: req.body.email, subject: resData.Subject, html: etempdataDynamic });                     
+                // console.log(mailRes,'--=-=-=-mailRes=-=-');
+                // // return;
+                // if (mailRes != null) {
                 var obj2 = {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,
                   location: geo !== null ? geo.country : "not found", activitity: findUser.tfastatus == 0 ? "Login" : "TFARedirection", createdDate: new Date(), modifiedDate: new Date(),
@@ -225,11 +440,11 @@ router.post('/login', common.isEmpty, async (req, res) => {
                 } else {
                   return res.json({ status: false, Message: "Oops!, Please try again later" });
                 }
-                } else {
-                  return res.json({
-                    Message: "Oops! We couldn’t send the email at this time. Please try again later ",
-                  });
-                }
+                // } else {
+                //   return res.json({
+                //     Message: "Oops! We couldn’t send the email at this time. Please try again later ",
+                //   });
+                // }
               } else {
                 var obj2 = {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,
