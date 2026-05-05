@@ -91,6 +91,7 @@ const UserSchema = mongoose.Schema({
     type: Object,
     default: {},
   },
+  kycRequested: { type: Boolean, default: false },
 });
 UserSchema.plugin(mongoosePaginate);
 

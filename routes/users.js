@@ -12848,12 +12848,19 @@ router.post("/depasify-webhook", async (req, res) => {
     // ✅ 1. KYC VERIFIED
     // ======================================================
     if (event === "identification_verified") {
-      const { status, external_user_uuid, identification_id } = attributes;
+      const { status, identification_id } = attributes;
 
-      const user = await usersDB.findById(external_user_uuid);
+      // ✅ find user who is pending
+      const user = await usersDB
+        .findOne({
+          kycstatus: 2,
+          kycRequested: true,
+          depasifyIdentificationId: { $exists: false },
+        })
+        .sort({ updatedAt: -1 });
 
       if (!user) {
-        console.log("KYC User not found");
+        console.log("No pending KYC user found");
         return res.sendStatus(200);
       }
 
@@ -12865,10 +12872,14 @@ router.post("/depasify-webhook", async (req, res) => {
 
       await usersDB.updateOne(
         { _id: user._id },
-        { kycstatus, depasifyIdentificationId: identification_id },
+        {
+          kycstatus,
+          depasifyIdentificationId: identification_id,
+          kycRequested: false,
+        },
       );
 
-      console.log("KYC Updated Successfully:", status);
+      console.log("KYC Updated for user:", user._id);
 
       // ✅ Optional Email
       // if (status === "approved") {
@@ -12882,6 +12893,45 @@ router.post("/depasify-webhook", async (req, res) => {
       //     html: `<p>Your KYC has been successfully approved.</p>`,
       //   });
       // }
+
+      // need to uncommand this --->
+      //  let getuser = await usersDB.findOne({ _id: user._id });
+      //     if (!getuser) {
+      //       return res.status(404).json({ success: false, message: "User not found" });
+      //     }
+      
+      //         const userId = getuser._id.toString();
+      //         userRedis.getUser(userId, function (datas) {
+      //           if (datas) {
+      //             console.log("Redis updated for user:", userId);
+      //           } else {
+      //             console.log("Redis update failed for user:", userId);
+      //           }
+      //         });
+      
+      //     const USERNAME = getuser.displayname;
+      
+      //     let findDetails = await antiPhishing.findOne({ userid: external_id });
+      //     const APCODE = `Antiphishing Code - ${findDetails ? findDetails.APcode : ""}`;
+      
+      //     let resData = await mailtempDB.findOne({ key: "KYC-APPROVED" });
+      //     if (!resData) {
+      //       return res.status(404).json({ success: false, message: "Email template not found" });
+      //     }
+      
+      //     let etempdataDynamic = resData.body
+      //       .replace(/###USERNAME###/g, USERNAME)
+      //       .replace(/###APCODE###/g, findDetails && findDetails.Status === "true" ? APCODE : "");
+      
+      //     await mail.sendMail({
+      //       from: {
+      //         name: process.env.FROM_NAME,
+      //         address: process.env.FROM_EMAIL,
+      //       },
+      //       to: common.decrypt(getuser.email),
+      //       subject: resData.Subject,
+      //       html: etempdataDynamic,
+      //     });
 
       return res.sendStatus(200);
     }
