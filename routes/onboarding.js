@@ -246,28 +246,28 @@ router.post('/onboardingUser', common.isEmpty, async (req, res) => {
                   );
                 }
                 // return;
-                // let resData = await mailtempDB.findOne({ key: "OTP" });
-                // const findDetails = await antiPhishing.findOne({
-                //   userid: createUser._id,
-                // });
-                // const message = `Antiphising Code - ${findDetails ? findDetails.APcode : ""}`;
-                // var etempdataDynamic = resData.body
-                //   .replace(/###OTP###/g, fou_digit)
-                //   .replace(/###USERNAME###/g, req.body.email)
-                //   .replace(
-                //     /###APCODE###/g,
-                //     findDetails && findDetails.Status === "true" ? message : "",
-                //   );
-                // var mailRes = await mail.sendMail({
-                //   from: {
-                //     name: process.env.FROM_NAME,
-                //     address: process.env.FROM_EMAIL,
-                //   },
-                //   to: req.body.email,
-                //   subject: resData.Subject,
-                //   html: etempdataDynamic,
-                // });
-                // if (mailRes != null) {
+                let resData = await mailtempDB.findOne({ key: "OTP" });
+                const findDetails = await antiPhishing.findOne({
+                  userid: createUser._id,
+                });
+                const message = `Antiphising Code - ${findDetails ? findDetails.APcode : ""}`;
+                var etempdataDynamic = resData.body
+                  .replace(/###OTP###/g, fou_digit)
+                  .replace(/###USERNAME###/g, req.body.email)
+                  .replace(
+                    /###APCODE###/g,
+                    findDetails && findDetails.Status === "true" ? message : "",
+                  );
+                var mailRes = await mail.sendMail({
+                  from: {
+                    name: process.env.FROM_NAME,
+                    address: process.env.FROM_EMAIL,
+                  },
+                  to: req.body.email,
+                  subject: resData.Subject,
+                  html: etempdataDynamic,
+                });
+                if (mailRes != null) {
                   var source = req.headers["user-agent"],
                     ua = useragent.parse(source);
                   var testip =
@@ -306,12 +306,12 @@ router.post('/onboardingUser', common.isEmpty, async (req, res) => {
                       Message: "Oops!, Please try again later",
                     });
                   }
-                // } else {
-                //   return res.json({
-                //     Message:
-                //       "Oops! We couldn’t send the email at this time. Please try again later ",
-                //   });
-                // }
+                } else {
+                  return res.json({
+                    Message:
+                      "Oops! We couldn’t send the email at this time. Please try again later ",
+                  });
+                }
               } else {
                 return res.json({ status: false, Message: "Oops!, Please try again later" });
               }
@@ -389,12 +389,12 @@ router.post('/login', common.isEmpty, async (req, res) => {
               let findIP = await userLoginhistoryDB.findOne({ user_id: findUser._id, ipAddress: ip_address }).exec();
               console.log(findIP,"---findIP---");
               if (findIP == null) {
-                // let resData = await mailtempDB.findOne({ key: "idaddress" });
-                // var etempdataDynamic = resData.body.replace(/###USERNAME###/g, req.body.email).replace(/###WHEN###/g, moment().format('YYYY-MM-DD HH:mm:ss')).replace(/###IP###/g, ip_address);
-                // var mailRes = await mail.sendMail( { from: {name: process.env.FROM_NAME, address: process.env.FROM_EMAIL},to: req.body.email, subject: resData.Subject, html: etempdataDynamic });                     
-                // console.log(mailRes,'--=-=-=-mailRes=-=-');
-                // // return;
-                // if (mailRes != null) {
+                let resData = await mailtempDB.findOne({ key: "idaddress" });
+                var etempdataDynamic = resData.body.replace(/###USERNAME###/g, req.body.email).replace(/###WHEN###/g, moment().format('YYYY-MM-DD HH:mm:ss')).replace(/###IP###/g, ip_address);
+                var mailRes = await mail.sendMail( { from: {name: process.env.FROM_NAME, address: process.env.FROM_EMAIL},to: req.body.email, subject: resData.Subject, html: etempdataDynamic });                     
+                console.log(mailRes,'--=-=-=-mailRes=-=-');
+                // return;
+                if (mailRes != null) {
                 var obj2 = {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,
                   location: geo !== null ? geo.country : "not found", activitity: findUser.tfastatus == 0 ? "Login" : "TFARedirection", createdDate: new Date(), modifiedDate: new Date(),
@@ -440,11 +440,11 @@ router.post('/login', common.isEmpty, async (req, res) => {
                 } else {
                   return res.json({ status: false, Message: "Oops!, Please try again later" });
                 }
-                // } else {
-                //   return res.json({
-                //     Message: "Oops! We couldn’t send the email at this time. Please try again later ",
-                //   });
-                // }
+                } else {
+                  return res.json({
+                    Message: "Oops! We couldn’t send the email at this time. Please try again later ",
+                  });
+                }
               } else {
                 var obj2 = {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,

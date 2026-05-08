@@ -64,6 +64,7 @@
     "qs": "^6.14.0",
     "randomatic": "^3.1.1",
     "redis": "^3.1.2",
+    "resend": "^6.12.3",
     "rimraf": "^3.0.2",
     "ripple-address-codec": "^4.2.4",
     "ripple-keypairs": "^1.1.4",

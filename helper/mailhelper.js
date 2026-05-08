@@ -6,6 +6,9 @@ const key = require("../config/key");
 const api_key = key.sendgrid_api;
 const from_mail = process.env.FROM_EMAIL;
 const axios = require('axios');
+const { Resend } = require("resend");
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const transporter = nodemailer.createTransport({
   secure: false,
@@ -113,7 +116,7 @@ const  mobileNumber= 7010889149
 
 
 // Main function to send an email
-const sendMail = async (options) => {
+const sendMailOld = async (options) => {
   console.log(options, "dadsfasdfasdfasdfasdfas")
   try {
     const mailOptions = {
@@ -170,6 +173,27 @@ const sendMail = async (options) => {
   //     console.error('Error sending email:', error.response ? error.response.data : error.message);
   //     return false;
   //   }
+};
+
+const sendMail = async (options) => {
+  try {
+    console.log("Sending Email To:", options.to);
+
+    const response = await resend.emails.send({
+      from: `${process.env.FROM_NAME} <${process.env.FROM_EMAIL}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+    });
+
+    console.log("Email Sent Successfully:", response);
+
+    return response;
+  } catch (error) {
+    console.log("Resend Mail Error:", error);
+
+    throw error;
+  }
 };
 
 
