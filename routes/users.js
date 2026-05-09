@@ -12841,8 +12841,8 @@ router.post("/depasify-webhook", async (req, res) => {
 
     const { type } = req.body;
 
-        const event = req.body?.data?.event;
-        const attributes = req.body?.data?.attributes;
+    const event = req.body?.data?.event;
+    const attributes = req.body?.data?.attributes;
 
     // ======================================================
     // ✅ 1. KYC VERIFIED
@@ -12899,7 +12899,7 @@ router.post("/depasify-webhook", async (req, res) => {
       //     if (!getuser) {
       //       return res.status(404).json({ success: false, message: "User not found" });
       //     }
-      
+
       //         const userId = getuser._id.toString();
       //         userRedis.getUser(userId, function (datas) {
       //           if (datas) {
@@ -12908,21 +12908,21 @@ router.post("/depasify-webhook", async (req, res) => {
       //             console.log("Redis update failed for user:", userId);
       //           }
       //         });
-      
+
       //     const USERNAME = getuser.displayname;
-      
+
       //     let findDetails = await antiPhishing.findOne({ userid: external_id });
       //     const APCODE = `Antiphishing Code - ${findDetails ? findDetails.APcode : ""}`;
-      
+
       //     let resData = await mailtempDB.findOne({ key: "KYC-APPROVED" });
       //     if (!resData) {
       //       return res.status(404).json({ success: false, message: "Email template not found" });
       //     }
-      
+
       //     let etempdataDynamic = resData.body
       //       .replace(/###USERNAME###/g, USERNAME)
       //       .replace(/###APCODE###/g, findDetails && findDetails.Status === "true" ? APCODE : "");
-      
+
       //     await mail.sendMail({
       //       from: {
       //         name: process.env.FROM_NAME,
@@ -12936,8 +12936,89 @@ router.post("/depasify-webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // ✅ 2. FIAT PAYMENT RECEIVED
     // ======================================================
-    // ✅ 2. DEPOSIT CONFIRMED
+
+    if (event === "fiat_payment_received") {
+      const {
+        amount,
+        currency,
+        fiat_payment_uuid,
+        identification_uuid,
+        status,
+      } = attributes;
+
+      // ✅ only completed payments
+      if (status !== "completed") {
+        console.log("Fiat payment not completed");
+        return res.sendStatus(200);
+      }
+
+      // ✅ find user using identification id
+      const user = await usersDB.findOne({
+        depasifyIdentificationId: identification_uuid,
+      });
+
+      if (!user) {
+        console.log("Fiat deposit user not found");
+        return res.sendStatus(200);
+      }
+
+      // ✅ duplicate protection
+      const alreadyExists = await depositDB.findOne({
+        txnid: fiat_payment_uuid,
+      });
+
+      if (alreadyExists) {
+        console.log("Duplicate fiat deposit ignored");
+        return res.sendStatus(200);
+      }
+
+      // ✅ save deposit history
+      const depositObj = await depositDB.create({
+        userId: user._id,
+        currencySymbol: currency,
+        depamt: Number(amount),
+        txnid: fiat_payment_uuid,
+        status: 1,
+        depType: 1,
+      });
+
+      // ✅ update wallet balance
+      const wallet = await userWalletDB.findOne({
+        userId: user._id,
+        "wallets.currencySymbol": currency,
+      });
+
+      if (!wallet) {
+        console.log("Wallet not found");
+
+        return res.sendStatus(200);
+      }
+
+      await userWalletDB.updateOne(
+        {
+          userId: user._id,
+          "wallets.currencySymbol": currency,
+        },
+        {
+          $inc: {
+            "wallets.$.amount": Number(amount),
+          },
+        },
+      );
+
+      console.log(`Fiat deposit credited successfully: ${amount} ${currency}`);
+
+      // ======================================================
+      // OPTIONAL EMAIL
+      // ======================================================
+
+      return res.sendStatus(200);
+    }
+
+    // ======================================================
+    // ✅ 3. DEPOSIT CONFIRMED
     // ======================================================
     if (type === "deposit.confirmed") {
       const { wallet_id, amount, txid } = req.body;
@@ -13009,18 +13090,18 @@ router.post("/depasify-webhook", async (req, res) => {
       // }
 
       // // 📧 send email
-     // try {
-       //   await email_function(
-        //     foundUser._id,
-         //     currencySymbol,
-         //     txid,
+      // try {
+      //   await email_function(
+      //     foundUser._id,
+      //     currencySymbol,
+      //     txid,
       //     Number(amount),
       //     updatedBalance,
-       //     depositObj.createdDate,
+      //     depositObj.createdDate,
       //     network,
-       //   );
-       //   console.log("Email sent ✅");
-       // } catch (emailErr) {
+      //   );
+      //   console.log("Email sent ✅");
+      // } catch (emailErr) {
       //   console.log("Email error:", emailErr);
       // }
 
@@ -13035,6 +13116,74 @@ router.post("/depasify-webhook", async (req, res) => {
     return res.sendStatus(500);
   }
 });
+
+router.post(
+  "/start-fiat-deposit",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+
+      const user = await usersDB.findById(req.userId);
+
+      if (!user) {
+        return res.json({
+          status: false,
+          message: "User not found",
+        });
+      }
+
+      if (user.kycstatus !== 1) {
+        return res.json({
+          status: false,
+          message: "Complete KYC first",
+        });
+      }
+
+      if (!user.depasifyIdentificationId) {
+        return res.json({
+          status: false,
+          message: "Identification ID not found",
+        });
+      }
+
+      const amount = req.body.amount;
+
+      if (!amount || amount <= 0) {
+        return res.json({
+          status: false,
+          message: "Invalid amount",
+        });
+      }
+
+      const redirectUrl = encodeURIComponent(
+        "https://pitiklini.com/checkout"
+      );
+
+      // ✅ create depasify payment URL
+      const widgetUrl =
+        `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+        `&scenario=direct_card_payment` +
+        `&identification_id=${user.depasifyIdentificationId}` +
+        `&amount=${amount}` +
+        `&redirect_url=${redirectUrl}`;
+
+      return res.json({
+        status: true,
+        url: widgetUrl,
+      });
+
+    } catch (err) {
+
+      console.log(err);
+
+      return res.json({
+        status: false,
+        message: "Failed to start fiat deposit",
+      });
+
+    }
+  }
+);
 
 const email_function = async (userid,currencySymbol,txhash,amount,balance,date,network)=>{
   try{

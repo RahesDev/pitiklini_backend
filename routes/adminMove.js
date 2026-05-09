@@ -211,9 +211,10 @@ async function decryptPrivateKeyLegacy(flatHex) {
 //   return decrypted.toString(); // 👉 This should be the WIF private key
 // }
 
-cron.schedule("*/5 * * * *", () => {
-  processDeposits();
-});
+// ---->cron function command
+// cron.schedule("*/5 * * * *", () => {
+//   processDeposits();
+// });
 
 async function processDeposits() {
   try {
