@@ -12839,7 +12839,7 @@ router.post("/depasify-webhook", async (req, res) => {
   try {
     console.log("DEPASIFY WEBHOOK:", JSON.stringify(req.body, null, 2));
 
-    const { type } = req.body;
+    // const { type } = req.body;
 
     const event = req.body?.data?.event;
     const attributes = req.body?.data?.attributes;
@@ -13020,60 +13020,85 @@ router.post("/depasify-webhook", async (req, res) => {
     // ======================================================
     // ✅ 3. DEPOSIT CONFIRMED
     // ======================================================
-    if (type === "deposit.confirmed") {
-      const { wallet_id, amount, txid } = req.body;
+    if (event === "blockchain_payment_received") {
+      const {
+        tx_hash,
+        blockchain_payment_uuid,
+        blockchain_wallet_id,
+        account_id,
+        amount,
+        currency,
+        status,
+      } = attributes;
 
-      const users = await usersDB.find({ depasifyWallets: { $exists: true } });
+      // ✅ only confirmed
+
+      if (status !== "confirmed") {
+        console.log("Blockchain payment not confirmed");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ duplicate check
+
+      const alreadyExists = await depositDB.findOne({
+        txnid: tx_hash,
+      });
+
+      if (alreadyExists) {
+        console.log("Duplicate crypto deposit");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ find user by wallet id
+
+      const users = await usersDB.find({
+        depasifyWallets: {
+          $exists: true,
+        },
+      });
 
       let foundUser = null;
-      let currency = null;
 
       for (const user of users) {
         for (const key in user.depasifyWallets) {
-          if (user.depasifyWallets[key].walletId === wallet_id) {
+          if (user.depasifyWallets[key].walletId === blockchain_wallet_id) {
             foundUser = user;
-            currency = key;
             break;
           }
         }
+
         if (foundUser) break;
       }
 
       if (!foundUser) {
-        console.log("Deposit user not found");
+        console.log("Crypto deposit user not found");
+
         return res.sendStatus(200);
       }
 
-      // 🪙 normalize currency
-      const currencyMap = {
-        TRON: "TRX",
-        ETHEREUM: "ETH",
-        BITCOIN: "BTC",
-      };
-
-      const currencySymbol = currencyMap[currency] || currency;
-
-      const exists = await depositDB.findOne({ txnid: txid });
-      if (exists) {
-        console.log("Duplicate deposit ignored");
-        return res.sendStatus(200);
-      }
+      // ✅ save deposit history
 
       await depositDB.create({
         userId: foundUser._id,
-        currencySymbol,
-        amount: Number(amount),
-        txnid: txid,
-        status: "confirmed",
+        currencySymbol: currency,
+        depamt: Number(amount),
+        txnid: tx_hash,
+        status: 1,
       });
+
+      // ✅ credit wallet
 
       await userWalletDB.updateOne(
         {
           userId: foundUser._id,
-          "wallets.currencySymbol": currencySymbol,
+          "wallets.currencySymbol": currency,
         },
         {
-          $inc: { "wallets.$.amount": Number(amount) },
+          $inc: {
+            "wallets.$.amount": Number(amount),
+          },
         },
       );
 
@@ -13105,7 +13130,7 @@ router.post("/depasify-webhook", async (req, res) => {
       //   console.log("Email error:", emailErr);
       // }
 
-      console.log("Deposit processed ✅");
+      console.log("Crypto Deposit Credited:", foundUser._id);
 
       return res.sendStatus(200);
     }
