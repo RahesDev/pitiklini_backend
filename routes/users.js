@@ -12835,6 +12835,69 @@ router.get("/get_deposit_list", common.tokenmiddleware, async (req, res) => {
 //   }
 // });
 
+const BASE_URL_DEPA = "https://sandbox.depasify.com/api/v1";
+
+let depasifyToken = null;
+let depasifyExpiry = 0;
+
+async function getDepasifyToken() {
+  if (depasifyToken && Date.now() < depasifyExpiry) {
+    return depasifyToken;
+  }
+
+  const res = await axios.post(
+    `${BASE_URL_DEPA}/sign_in`,
+    {
+      email: process.env.DEPASIFY_EMAIL,
+      password: process.env.DEPASIFY_PASSWORD,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    },
+  );
+
+  console.log("TOKEN RESPONSE:", res.data);
+
+  depasifyToken = res.data?.data?.token;
+
+  if (!depasifyToken) {
+    throw new Error("Token not found");
+  }
+
+  depasifyExpiry = Date.now() + 50 * 60 * 1000;
+
+  console.log("depasifyToken -->>", depasifyToken);
+  return depasifyToken;
+}
+
+async function getIdentificationById(identificationId) {
+  try {
+    const token = await getDepasifyToken();
+
+    const response = await axios.get(
+      `${BASE_URL_DEPA}/identifications/${identificationId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    return response.data;
+  } catch (err) {
+    console.log(
+      "Identification Fetch Error:",
+      err.response?.data || err.message,
+    );
+
+    return null;
+  }
+}
+
 router.post("/depasify-webhook", async (req, res) => {
   try {
     console.log("DEPASIFY WEBHOOK:", JSON.stringify(req.body, null, 2));
@@ -12850,19 +12913,32 @@ router.post("/depasify-webhook", async (req, res) => {
     if (event === "identification_verified") {
       const { status, identification_id } = attributes;
 
-      // ✅ find user who is pending
-      const user = await usersDB
-        .findOne({
-          kycstatus: 2,
-          kycRequested: true,
-          depasifyIdentificationId: { $exists: false },
-        })
-        .sort({ updatedAt: -1 });
+       const identification = await getIdentificationById(identification_id);
+      console.log("identification get from API:- ", identification);
+      
+       if (!identification) {
+         console.log("Identification not found");
 
-      if (!user) {
-        console.log("No pending KYC user found");
-        return res.sendStatus(200);
-      }
+         return res.sendStatus(200);
+       }
+
+       // ✅ Get external UUID
+       const externalUserId = identification.external_uuid;
+
+       if (!externalUserId) {
+         console.log("External UUID missing");
+
+         return res.sendStatus(200);
+       }
+
+       // ✅ Find exact user
+       const user = await usersDB.findById(externalUserId);
+
+       if (!user) {
+         console.log("User not found");
+
+         return res.sendStatus(200);
+       }
 
       let kycstatus = 0;
 
