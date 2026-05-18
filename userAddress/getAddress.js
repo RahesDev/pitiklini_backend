@@ -421,15 +421,15 @@ router.post(
         selectedNetwork = "ETHEREUM";
       } 
       else if (currencySymbol === "BNB") {
-        selectedNetwork = "BSC"; // ⚠️ only if you create BSC wallet later
+        selectedNetwork = "BSC"; 
       } 
       else if (currencySymbol === "TRX") {
         selectedNetwork = "TRON";
       } 
       else if (currencySymbol === "USDT") {
-        if (network === "ERC20") selectedNetwork = "ETHEREUM";
-        else if (network === "BEP20") selectedNetwork = "BSC";
-        else if (network === "TRC20") selectedNetwork = "TRON";
+        if (network === "erc20token") selectedNetwork = "ETHEREUM";
+        else if (network === "bep20token") selectedNetwork = "BSC";
+        else if (network === "trc20token") selectedNetwork = "TRON";
       }
 
       console.log("selectedNetwork -->", selectedNetwork);
