@@ -12878,6 +12878,9 @@ async function getIdentificationById(identificationId) {
   try {
     const token = await getDepasifyToken();
 
+    console.log("IDENTIFICATION ID:", identificationId);
+    console.log("TOKEN:", token);
+
     const response = await axios.get(
       `${BASE_URL_DEPA}/identifications/${identificationId}`,
       {
@@ -12885,15 +12888,17 @@ async function getIdentificationById(identificationId) {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
         },
-      },
+      }
     );
+
+    console.log("IDENTIFICATION RESPONSE:", response);
+    console.log("IDENTIFICATION RESPONSE DATA:", response.data);
 
     return response.data;
   } catch (err) {
-    console.log(
-      "Identification Fetch Error:",
-      err.response?.data || err.message,
-    );
+    console.log("STATUS:", err.response?.status);
+    console.log("HEADERS:", err.response?.headers);
+    console.log("DATA:", err.response?.data);
 
     return null;
   }
