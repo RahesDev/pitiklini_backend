@@ -12885,10 +12885,11 @@ async function getIdentificationById(identificationId) {
       `${BASE_URL_DEPA}/identifications/${identificationId}`,
       {
         headers: {
-          Authorization: `Bearer ${token}`,
+          // Authorization: `Bearer ${token}`,
+          Authorization: token,
           Accept: "application/json",
         },
-      }
+      },
     );
 
     console.log("IDENTIFICATION RESPONSE:", response);
