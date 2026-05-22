@@ -563,13 +563,48 @@ router.post(
         });
       }
 
+      // ==========================================
+      // VERIFIED USERS
+      // ==========================================
+      if (user.kycstatus === 1) {
+        return res.json({
+          status: false,
+          message: "KYC already verified",
+        });
+      }
+
+      // ==========================================
+      // 15 MINUTE COOLDOWN
+      // ==========================================
+      if (user.kycLastStartedAt) {
+
+        const diffMs =
+          Date.now() - new Date(user.kycLastStartedAt).getTime();
+
+        const diffMinutes =
+          Math.floor(diffMs / (1000 * 60));
+
+        if (diffMinutes < 15) {
+
+          const remaining = 15 - diffMinutes;
+
+          return res.json({
+            status: false,
+            message:
+              `KYC verification is already in progress. Please try again after ${remaining} minute(s).`,
+          });
+        }
+      }
+
       const redirectUrl = encodeURIComponent(
         "https://pitiklini.com/kyc"
       );
 
       let widgetUrl = "";
 
-      // Existing incomplete KYC
+      // ==========================================
+      // CONTINUE EXISTING KYC
+      // ==========================================
       if (user.depasifyIdentificationId) {
 
         widgetUrl =
@@ -592,6 +627,7 @@ router.post(
         {
           kycstatus: 2,
           kycRequested: true,
+          kycLastStartedAt: new Date(),
         }
       );
 
@@ -601,6 +637,7 @@ router.post(
       });
 
     } catch (err) {
+
       console.log(err);
 
       return res.json({

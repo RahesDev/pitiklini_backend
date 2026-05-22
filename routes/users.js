@@ -12956,6 +12956,7 @@ router.post("/depasify-webhook", async (req, res) => {
             kycstatus: 1,
             kycRequested: false,
             depasifyIdentificationId: identification_id,
+            kycLastStartedAt: null,
           },
         );
 
@@ -13017,6 +13018,37 @@ router.post("/depasify-webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    if (event === "identification_pending") {
+      const { identification_id } = attributes;
+
+      const identification = await getIdentificationById(identification_id);
+
+      if (!identification) {
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identification.external_uuid;
+
+      const user = await usersDB.findById(externalUserId);
+
+      if (!user) {
+        return res.sendStatus(200);
+      }
+
+      await usersDB.updateOne(
+        { _id: user._id },
+        {
+          kycstatus: 2, // pending
+          kycRequested: true,
+          depasifyIdentificationId: identification_id,
+        },
+      );
+
+      console.log("KYC Pending:", user._id);
+
+      return res.sendStatus(200);
+    }
+
     if (event === "identification_retry") {
       const { identification_id } = attributes;
 
@@ -13040,6 +13072,7 @@ router.post("/depasify-webhook", async (req, res) => {
           kycstatus: 0,
           kycRequested: false,
           depasifyIdentificationId: identification_id,
+          kycLastStartedAt: null,
         },
       );
 
@@ -13068,9 +13101,10 @@ router.post("/depasify-webhook", async (req, res) => {
       await usersDB.updateOne(
         { _id: user._id },
         {
-          kycstatus: 0,
+          kycstatus: 3,
           kycRequested: false,
           depasifyIdentificationId: identification_uuid,
+          kycLastStartedAt: null,
         },
       );
 

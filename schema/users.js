@@ -92,6 +92,10 @@ const UserSchema = mongoose.Schema({
     default: {},
   },
   kycRequested: { type: Boolean, default: false },
+  kycLastStartedAt: {
+    type: Date,
+    default: null,
+  },
 });
 UserSchema.plugin(mongoosePaginate);
 
