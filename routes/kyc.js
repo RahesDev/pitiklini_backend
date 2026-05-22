@@ -510,44 +510,106 @@ router.post(
   }
 );
 
-router.post("/start-verification", common.tokenmiddleware, async (req, res) => {
-  try {
-    const user = await usersDB.findById(req.userId);
+// router.post("/start-verification", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const user = await usersDB.findById(req.userId);
 
-    if (!user) {
-      return res.json({ status: false, message: "User not found" });
-    }
+//     if (!user) {
+//       return res.json({ status: false, message: "User not found" });
+//     }
 
-    // ✅ Step 1: mark as pending
-    await usersDB.updateOne(
-      { _id: user._id },
-      {
-        kycstatus: 2, // pending
-        kycRequested: true,
+//     // ✅ Step 1: mark as pending
+//     await usersDB.updateOne(
+//       { _id: user._id },
+//       {
+//         kycstatus: 2, // pending
+//         kycRequested: true,
+//       }
+//     );
+
+//     // ✅ Step 2: prepare redirect URL
+//     const redirectUrl = encodeURIComponent(
+//       "https://pitiklini.com/kyc"
+//     );
+
+//     const widgetUrl = `https://widget.sandbox.depa.finance/?partner=Pitiklini&scenario=kyc_only&external_user_uuid=${user._id}&redirect_url=${redirectUrl}`;
+
+//     return res.json({
+//       status: true,
+//       url: widgetUrl,
+//       message: "KYC started",
+//     });
+
+//   } catch (err) {
+//     console.log(err);
+//     return res.json({
+//       status: false,
+//       message: "Failed to start KYC",
+//     });
+//   }
+// });
+
+router.post(
+  "/start-verification",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const user = await usersDB.findById(req.userId);
+
+      if (!user) {
+        return res.json({
+          status: false,
+          message: "User not found",
+        });
       }
-    );
 
-    // ✅ Step 2: prepare redirect URL
-    const redirectUrl = encodeURIComponent(
-      "https://pitiklini.com/kyc"
-    );
+      const redirectUrl = encodeURIComponent(
+        "https://pitiklini.com/kyc"
+      );
 
-    const widgetUrl = `https://widget.sandbox.depa.finance/?partner=Pitiklini&scenario=kyc_only&external_user_uuid=${user._id}&redirect_url=${redirectUrl}`;
+      let widgetUrl = "";
 
-    return res.json({
-      status: true,
-      url: widgetUrl,
-      message: "KYC started",
-    });
+      // Existing incomplete KYC
+      if (user.depasifyIdentificationId) {
 
-  } catch (err) {
-    console.log(err);
-    return res.json({
-      status: false,
-      message: "Failed to start KYC",
-    });
+        widgetUrl =
+          `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+          `&scenario=kyc_only` +
+          `&identification_id=${user.depasifyIdentificationId}` +
+          `&redirect_url=${redirectUrl}`;
+
+      } else {
+
+        widgetUrl =
+          `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+          `&scenario=kyc_only` +
+          `&external_user_uuid=${user._id}` +
+          `&redirect_url=${redirectUrl}`;
+      }
+
+      await usersDB.updateOne(
+        { _id: user._id },
+        {
+          kycstatus: 2,
+          kycRequested: true,
+        }
+      );
+
+      return res.json({
+        status: true,
+        url: widgetUrl,
+      });
+
+    } catch (err) {
+      console.log(err);
+
+      return res.json({
+        status: false,
+        message: "Failed to start KYC",
+      });
+    }
   }
-});
+);
 
 router.post("/webhook", async (req, res) => {
   try {

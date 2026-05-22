@@ -12907,6 +12907,10 @@ router.post("/depasify-webhook", async (req, res) => {
     const event = req.body?.data?.event;
     const attributes = req.body?.data?.attributes;
 
+    const failedEvent = req.body?.error?.event;
+
+    const failedAttributes = req.body?.error?.attributes;
+
     // ======================================================
     // ✅ 1. KYC VERIFIED
     // ======================================================
@@ -12940,20 +12944,21 @@ router.post("/depasify-webhook", async (req, res) => {
          return res.sendStatus(200);
        }
 
-      let kycstatus = 0;
+      // let kycstatus = 0;
 
-      if (status === "verified" || status === "approved") kycstatus = 1;
-      else if (status === "pending") kycstatus = 2;
-      else kycstatus = 0;
+      // if (status === "verified" || status === "approved") kycstatus = 1;
+      // else if (status === "pending") kycstatus = 2;
+      // else kycstatus = 0;
 
-      await usersDB.updateOne(
-        { _id: user._id },
-        {
-          kycstatus,
-          depasifyIdentificationId: identification_id,
-          kycRequested: false,
-        },
-      );
+        await usersDB.updateOne(
+          { _id: user._id },
+          {
+            kycstatus: 1,
+            kycRequested: false,
+            depasifyIdentificationId: identification_id,
+          },
+        );
+
 
       console.log("KYC Updated for user:", user._id);
 
@@ -13008,6 +13013,68 @@ router.post("/depasify-webhook", async (req, res) => {
       //       subject: resData.Subject,
       //       html: etempdataDynamic,
       //     });
+
+      return res.sendStatus(200);
+    }
+
+    if (event === "identification_retry") {
+      const { identification_id } = attributes;
+
+      const identification = await getIdentificationById(identification_id);
+
+      if (!identification) {
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identification.external_uuid;
+
+      const user = await usersDB.findById(externalUserId);
+
+      if (!user) {
+        return res.sendStatus(200);
+      }
+
+      await usersDB.updateOne(
+        { _id: user._id },
+        {
+          kycstatus: 0,
+          kycRequested: false,
+          depasifyIdentificationId: identification_id,
+        },
+      );
+
+      console.log("KYC Retry stored:", user._id);
+
+      return res.sendStatus(200);
+    }
+
+    if (failedEvent === "identification_failed") {
+      const { identification_uuid } = failedAttributes;
+
+      const identification = await getIdentificationById(identification_uuid);
+
+      if (!identification) {
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identification.external_uuid;
+
+      const user = await usersDB.findById(externalUserId);
+
+      if (!user) {
+        return res.sendStatus(200);
+      }
+
+      await usersDB.updateOne(
+        { _id: user._id },
+        {
+          kycstatus: 0,
+          kycRequested: false,
+          depasifyIdentificationId: identification_uuid,
+        },
+      );
+
+      console.log("KYC Failed:", user._id);
 
       return res.sendStatus(200);
     }
