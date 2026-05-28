@@ -83,6 +83,7 @@ const UserSchema = mongoose.Schema({
   depasifyAccountId: { type: String, default: "" },
   depasifyExternalUuid: { type: String, default: "" },
   depasifyIdentificationId: { type: String, default: "" },
+  depasifyIdentificationAccountId: { type: String, default: "" },
   // depasifyWalletId: { type: String, default: "" },
   depasifyWallets: {
     type: Object,

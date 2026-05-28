@@ -12973,7 +12973,8 @@ router.post("/depasify-webhook", async (req, res) => {
           {
             kycstatus: 1,
             kycRequested: false,
-            depasifyIdentificationId: identification_id,
+            depasifyIdentificationId: identificationData.id,
+            depasifyIdentificationAccountId: identificationData.account_id,
             kycLastStartedAt: null,
           },
         );
