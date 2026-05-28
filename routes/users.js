@@ -12883,7 +12883,8 @@ async function getIdentificationById(identificationId) {
     console.log("TOKEN:", token);
 
     const response = await axios.get(
-      `${BASE_URL_DEPA}/identifications/${identificationId}`,
+      // `${BASE_URL_DEPA}/identifications/${identificationId}`,
+      `${BASE_URL_DEPA}/identifications?filter[external_uuid]=${identificationId}`,
       {
         headers: {
           // Authorization: `Bearer ${token}`,
