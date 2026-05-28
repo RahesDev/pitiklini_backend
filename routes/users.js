@@ -13046,9 +13046,18 @@ router.post("/depasify-webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const externalUserId = identification.external_uuid;
+      const identificationData = identification?.data?.[0];
 
-      const user = await usersDB.findById(externalUserId);
+      if (!identificationData) {
+        console.log("Identification data missing");
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identificationData.external_uuid;
+
+      const user = await usersDB.findOne({
+        depasifyExternalUuid: externalUserId,
+      });
 
       if (!user) {
         return res.sendStatus(200);
@@ -13077,9 +13086,18 @@ router.post("/depasify-webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const externalUserId = identification.external_uuid;
+      const identificationData = identification?.data?.[0];
 
-      const user = await usersDB.findById(externalUserId);
+      if (!identificationData) {
+        console.log("Identification data missing");
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identificationData.external_uuid;
+
+      const user = await usersDB.findOne({
+        depasifyExternalUuid: externalUserId,
+      });
 
       if (!user) {
         return res.sendStatus(200);
@@ -13109,9 +13127,18 @@ router.post("/depasify-webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
-      const externalUserId = identification.external_uuid;
+      const identificationData = identification?.data?.[0];
 
-      const user = await usersDB.findById(externalUserId);
+      if (!identificationData) {
+        console.log("Identification data missing");
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identificationData.external_uuid;
+
+      const user = await usersDB.findOne({
+        depasifyExternalUuid: externalUserId,
+      });
 
       if (!user) {
         return res.sendStatus(200);
@@ -13142,6 +13169,8 @@ router.post("/depasify-webhook", async (req, res) => {
         fiat_payment_uuid,
         identification_uuid,
         status,
+        account_id,
+        iban,
       } = attributes;
 
       // ✅ only completed payments
@@ -13152,7 +13181,7 @@ router.post("/depasify-webhook", async (req, res) => {
 
       // ✅ find user using identification id
       const user = await usersDB.findOne({
-        depasifyIdentificationId: identification_uuid,
+        depasifyExternalUuid: identification_uuid,
       });
 
       if (!user) {
@@ -13176,6 +13205,8 @@ router.post("/depasify-webhook", async (req, res) => {
         currencySymbol: currency,
         depamt: Number(amount),
         txnid: fiat_payment_uuid,
+        account_id: account_id,
+        iban: iban,
         status: 1,
         depType: 1,
       });
@@ -13209,6 +13240,47 @@ router.post("/depasify-webhook", async (req, res) => {
       // ======================================================
       // OPTIONAL EMAIL
       // ======================================================
+
+      return res.sendStatus(200);
+    }
+
+    if (failedEvent === "fiat_payment_failed") {
+      const { message, description, fiat_payment_uuid, identification_uuid } =
+        failedAttributes;
+
+      // ✅ find user using external uuid
+      const user = await usersDB.findOne({
+        depasifyExternalUuid: identification_uuid,
+      });
+
+      if (!user) {
+        console.log("Fiat failed user not found");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ duplicate protection
+      const alreadyExists = await depositDB.findOne({
+        txnid: fiat_payment_uuid,
+      });
+
+      if (alreadyExists) {
+        console.log("Duplicate failed fiat ignored");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ store failed deposit
+      await depositDB.create({
+        userId: user._id,
+        txnid: fiat_payment_uuid,
+        status: 2, // failed
+        depType: 1,
+        failureMessage: message,
+        failureDescription: description,
+      });
+
+      console.log("Fiat payment failed stored:", user._id);
 
       return res.sendStatus(200);
     }
@@ -13279,6 +13351,8 @@ router.post("/depasify-webhook", async (req, res) => {
       await depositDB.create({
         userId: foundUser._id,
         currencySymbol: currency,
+        blockchain_payment_uuid: blockchain_payment_uuid,
+        account_id: account_id,
         depamt: Number(amount),
         txnid: tx_hash,
         status: 1,
@@ -13327,6 +13401,33 @@ router.post("/depasify-webhook", async (req, res) => {
       // }
 
       console.log("Crypto Deposit Credited:", foundUser._id);
+
+      return res.sendStatus(200);
+    }
+
+    if (failedEvent === "blockchain_payment_failed") {
+      const { blockchain_payment_uuid, message } = failedAttributes;
+
+      // ✅ duplicate check
+      const alreadyExists = await depositDB.findOne({
+        blockchain_payment_uuid,
+      });
+
+      if (alreadyExists) {
+        console.log("Duplicate failed blockchain payment");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ store failed crypto payment
+      await depositDB.create({
+        blockchain_payment_uuid,
+        txnid: blockchain_payment_uuid,
+        status: 2, // failed
+        failureMessage: message,
+      });
+
+      console.log("Blockchain payment failed stored");
 
       return res.sendStatus(200);
     }
