@@ -12935,8 +12935,15 @@ router.post("/depasify-webhook", async (req, res) => {
          return res.sendStatus(200);
        }
 
-       // ✅ Get external UUID
-       const externalUserId = identification.external_uuid;
+      // ✅ Get external UUID
+      const identificationData = identification?.data?.[0];
+
+      if (!identificationData) {
+        console.log("Identification data missing");
+        return res.sendStatus(200);
+      }
+
+      const externalUserId = identificationData.external_uuid;
 
        if (!externalUserId) {
          console.log("External UUID missing");
@@ -12945,7 +12952,9 @@ router.post("/depasify-webhook", async (req, res) => {
        }
 
        // ✅ Find exact user
-       const user = await usersDB.findById(externalUserId);
+      const user = await usersDB.findOne({
+        depasifyExternalUuid: externalUserId,
+      });
 
        if (!user) {
          console.log("User not found");

@@ -182,6 +182,7 @@ router.post('/onboardingUser', common.isEmpty, async (req, res) => {
                 email: common.encrypt(req.body.email),
                 password: lock,
                 uuid: uuidv4().slice(0, 8),
+                depasifyExternalUuid: uuidv4(),
                 emailOtp: fou_digit,
                 otpGenerateAt: new Date(),
                 // walletAddress: req.body.walletAddress || "",

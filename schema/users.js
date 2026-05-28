@@ -81,6 +81,7 @@ const UserSchema = mongoose.Schema({
   vipBadge: { type: Boolean, default: false },
   // depasifyIdentityId: { type: String, default: "" },
   depasifyAccountId: { type: String, default: "" },
+  depasifyExternalUuid: { type: String, default: "" },
   depasifyIdentificationId: { type: String, default: "" },
   // depasifyWalletId: { type: String, default: "" },
   depasifyWallets: {

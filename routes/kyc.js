@@ -629,7 +629,7 @@ router.post(
         widgetUrl =
           `https://widget.depa.finance/?partner=Pitiklini` +
           `&scenario=kyc_only` +
-          `&external_user_uuid=${user._id}` +
+          `&identification_id=${user.depasifyExternalUuid}` +
           `&redirect_url=${redirectUrl}`;
       }
 
