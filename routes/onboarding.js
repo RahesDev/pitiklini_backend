@@ -36,7 +36,8 @@ const MAX_ATTEMPTS = 5;
 //Registration//
 
 const axios = require("axios");
-const BASE_URL = "https://sandbox.depasify.com/api/v1";
+// const BASE_URL = "https://sandbox.depasify.com/api/v1";
+const BASE_URL = "https://backoffice.depasify.com/api/v1";
 
 let depasifyToken = null;
 let depasifyExpiry = 0;

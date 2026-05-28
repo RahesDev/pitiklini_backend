@@ -23,7 +23,8 @@ const notify = require("../schema/notification");
 let custodyToken = null;
 let custodyTokenExpiry = 0;
 
-const BASE_URL = "https://sandbox.depasify.com/api/v1";
+// const BASE_URL = "https://sandbox.depasify.com/api/v1";
+const BASE_URL = "https://backoffice.depasify.com/api/v1";
 
 let depasifyToken = null;
 let depasifyExpiry = 0;

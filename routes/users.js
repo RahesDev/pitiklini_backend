@@ -12835,7 +12835,8 @@ router.get("/get_deposit_list", common.tokenmiddleware, async (req, res) => {
 //   }
 // });
 
-const BASE_URL_DEPA = "https://sandbox.depasify.com/api/v1";
+// const BASE_URL_DEPA = "https://sandbox.depasify.com/api/v1";
+const BASE_URL_DEPA = "https://backoffice.depasify.com/api/v1";
 
 let depasifyToken = null;
 let depasifyExpiry = 0;
@@ -13369,8 +13370,14 @@ router.post(
       );
 
       // ✅ create depasify payment URL
+      // const widgetUrl =
+      //   `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+      //   `&scenario=direct_card_payment` +
+      //   `&identification_id=${user.depasifyIdentificationId}` +
+      //   `&amount=${amount}` +
+      //   `&redirect_url=${redirectUrl}`;
       const widgetUrl =
-        `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+        `https://widget.depa.finance/?partner=Pitiklini` +
         `&scenario=direct_card_payment` +
         `&identification_id=${user.depasifyIdentificationId}` +
         `&amount=${amount}` +

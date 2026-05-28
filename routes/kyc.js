@@ -607,16 +607,27 @@ router.post(
       // ==========================================
       if (user.depasifyIdentificationId) {
 
+        // widgetUrl =
+        //   `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+        //   `&scenario=kyc_only` +
+        //   `&identification_id=${user.depasifyIdentificationId}` +
+        //   `&redirect_url=${redirectUrl}`;
+
         widgetUrl =
-          `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+          `https://widget.depa.finance/?partner=Pitiklini` +
           `&scenario=kyc_only` +
           `&identification_id=${user.depasifyIdentificationId}` +
           `&redirect_url=${redirectUrl}`;
 
       } else {
 
+        // widgetUrl =
+        //   `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+        //   `&scenario=kyc_only` +
+        //   `&external_user_uuid=${user._id}` +
+        //   `&redirect_url=${redirectUrl}`;
         widgetUrl =
-          `https://widget.sandbox.depa.finance/?partner=Pitiklini` +
+          `https://widget.depa.finance/?partner=Pitiklini` +
           `&scenario=kyc_only` +
           `&external_user_uuid=${user._id}` +
           `&redirect_url=${redirectUrl}`;
