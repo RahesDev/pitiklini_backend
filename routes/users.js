@@ -13417,58 +13417,133 @@ router.post("/depasify-webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // if (event === "blockchain_payment_sent") {
+    //   const {
+    //     transaction_id,
+    //     blockchain_payment_uuid,
+    //     blockchain_wallet_id,
+    //     account_id,
+    //     amount,
+    //     currency,
+    //     status,
+    //     timestamp,
+    //   } = attributes;
+
+    //   console.log("Blockchain payment sent webhook:", attributes);
+
+    //   // ✅ find withdrawal using depasify payment id
+    //   const withdraw = await withdrawDB.findOne({
+    //     depasifyPaymentId: blockchain_payment_uuid,
+    //   });
+
+    //   if (!withdraw) {
+    //     console.log("Withdraw not found");
+
+    //     return res.sendStatus(200);
+    //   }
+
+    //   // ✅ prevent duplicate success updates
+    //   if (withdraw.status === 2) {
+    //     console.log("Withdraw already completed");
+
+    //     return res.sendStatus(200);
+    //   }
+
+    //   // ✅ update withdraw success
+    //   await withdrawDB.updateOne(
+    //     {
+    //       _id: withdraw._id,
+    //     },
+    //     {
+    //       status: 2,
+    //       txn_id: transaction_id,
+    //       blockchain_payment_uuid,
+    //       account_id,
+    //       // processedDate: new Date(),
+    //       // webhookStatus: status,
+    //       // webhookTimestamp: timestamp,
+    //     },
+    //   );
+
+    //   console.log("Withdraw marked completed:", withdraw._id);
+
+    //   return res.sendStatus(200);
+    // }
+
     if (event === "blockchain_payment_sent") {
-      const {
-        transaction_id,
+
+  const {
+    tx_hash,
+    blockchain_payment_uuid,
+    blockchain_wallet_id,
+    account_id,
+    amount,
+    currency,
+    status,
+  } = attributes;
+
+  console.log("Blockchain payment sent webhook:", attributes);
+
+  // ✅ find withdrawal
+  const withdraw = await withdrawDB.findOne({
+    depasifyPaymentId: blockchain_payment_uuid,
+  });
+
+  if (!withdraw) {
+    console.log("Withdraw not found");
+
+    return res.sendStatus(200);
+  }
+
+  // ============================================
+  // ✅ PENDING STATUS
+  // ============================================
+  if (status === "pending") {
+
+    await withdrawDB.updateOne(
+      { _id: withdraw._id },
+      {
+        status: 1,
+        txn_id: tx_hash || null,
         blockchain_payment_uuid,
-        blockchain_wallet_id,
         account_id,
-        amount,
-        currency,
-        status,
-        timestamp,
-      } = attributes;
-
-      console.log("Blockchain payment sent webhook:", attributes);
-
-      // ✅ find withdrawal using depasify payment id
-      const withdraw = await withdrawDB.findOne({
-        depasifyPaymentId: blockchain_payment_uuid,
-      });
-
-      if (!withdraw) {
-        console.log("Withdraw not found");
-
-        return res.sendStatus(200);
       }
+    );
 
-      // ✅ prevent duplicate success updates
-      if (withdraw.status === 2) {
-        console.log("Withdraw already completed");
+    console.log("Withdraw marked pending:", withdraw._id);
 
-        return res.sendStatus(200);
-      }
+    return res.sendStatus(200);
+  }
 
-      // ✅ update withdraw success
-      await withdrawDB.updateOne(
-        {
-          _id: withdraw._id,
-        },
-        {
-          status: 2,
-          txn_id: transaction_id,
-          blockchain_payment_uuid,
-          account_id,
-          // processedDate: new Date(),
-          // webhookStatus: status,
-          // webhookTimestamp: timestamp,
-        },
-      );
+  // ============================================
+  // ✅ CONFIRMED STATUS
+  // ============================================
+  if (status === "confirmed") {
 
-      console.log("Withdraw marked completed:", withdraw._id);
+    // prevent duplicate updates
+    if (withdraw.status === 2) {
+      console.log("Withdraw already completed");
 
       return res.sendStatus(200);
     }
+
+    await withdrawDB.updateOne(
+      { _id: withdraw._id },
+      {
+        status: 2, // completed
+        txn_id: tx_hash || null,
+        blockchain_payment_uuid,
+        account_id,
+      }
+    );
+
+    console.log("Withdraw marked completed:", withdraw._id);
+
+    return res.sendStatus(200);
+  }
+
+  return res.sendStatus(200);
+}
 
   if (failedEvent === "blockchain_payment_failed") {
     const { blockchain_payment_uuid, message } = failedAttributes;

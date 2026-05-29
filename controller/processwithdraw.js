@@ -356,6 +356,7 @@ async function processWithdrawal(req, res) {
       if (networkType === "ERC20") depaNetwork = "ETHEREUM";
       else if (networkType === "TRC20") depaNetwork = "TRON";
       else if (networkType === "BEP20") depaNetwork = "BSC";
+      else if (currency.currencySymbol === "TRX") depaNetwork = "TRON";
       else depaNetwork = currency.currencySymbol;
 
       // 🔥 GET USER WALLET
@@ -385,6 +386,8 @@ async function processWithdrawal(req, res) {
           "Depasify Withdraw Error:",
           err.response?.data || err.message,
         );
+          console.log("Depasify Withdraw Error status:",err.response?.status);
+          console.log("Depasify Withdraw Error headers:",err.response?.headers);
 
         await withdraw_cancel_email(
           currency.currencySymbol,
@@ -413,7 +416,7 @@ async function processWithdrawal(req, res) {
         },
         {
           $inc: {
-            "wallets.$.balance": -amount,
+            "wallets.$.amount": -amount,
           },
         },
       );
@@ -592,13 +595,15 @@ async function sendCryptoDepasify(accountId, walletId, amount, asset, address, n
   const token = await getDepasifyToken();
 
     const payload = {
-      amount: parseFloat(amount),
+      amount: Number(parseFloat(amount).toFixed(8)),
       currency: asset,
       destination_address: address,
       network: network,
     };
 
   console.log("DEPASIFY PAYLOAD:", payload);
+  console.log("DEPASIFY PAYLOAD accountId:", accountId);
+  console.log("DEPASIFY PAYLOAD walletId:", walletId);
   console.log(typeof amount, payload.amount);
 
   const res = await axios.post(
