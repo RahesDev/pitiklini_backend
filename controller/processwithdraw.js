@@ -339,7 +339,8 @@ async function processWithdrawal(req, res) {
       // ✅ FEES CALCULATION
       // ==========================
       const feesNow = Number(currency.withdrawFee || 0);
-      const receiveAmount = amount - feesNow;
+      // const receiveAmount = amount - feesNow;
+      const receiveAmount = parseFloat(amount) - feesNow;
 
       if (receiveAmount <= 0) {
         return res.json({
@@ -590,21 +591,25 @@ async function getDepasifyToken() {
 async function sendCryptoDepasify(accountId, walletId, amount, asset, address, network) {
   const token = await getDepasifyToken();
 
-  const res = await axios.post(
-    `${BASE_URL}/accounts/${accountId}/blockchain_wallets/${walletId}/blockchain_payments`,
-    {
-      amount: String(amount),
-      currency: asset, // USDT / BTC
-      // asset: asset, // USDT / BTC
+    const payload = {
+      amount: parseFloat(amount),
+      currency: asset,
       destination_address: address,
       network: network,
-    },
+    };
+
+  console.log("DEPASIFY PAYLOAD:", payload);
+  console.log(typeof amount, payload.amount);
+
+  const res = await axios.post(
+    `${BASE_URL}/accounts/${accountId}/blockchain_wallets/${walletId}/blockchain_payments`,
+    payload,
     {
       headers: {
         Authorization: token,
         "Content-Type": "application/json",
       },
-    }
+    },
   );
 
   console.log("Withdraw response:", res.data);

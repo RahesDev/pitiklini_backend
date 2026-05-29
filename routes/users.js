@@ -13174,8 +13174,8 @@ router.post("/depasify-webhook", async (req, res) => {
       } = attributes;
 
       // ✅ only completed payments
-      if (status !== "completed") {
-        console.log("Fiat payment not completed");
+      if (status !== "confirmed") {
+        console.log("Fiat payment not confirmed");
         return res.sendStatus(200);
       }
 
