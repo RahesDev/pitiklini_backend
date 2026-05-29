@@ -13301,8 +13301,8 @@ router.post("/depasify-webhook", async (req, res) => {
 
       // ✅ only confirmed
 
-      if (status !== "confirmed") {
-        console.log("Blockchain payment not confirmed");
+      if (status !== "verified") {
+        console.log("Blockchain payment not verified");
 
         return res.sendStatus(200);
       }
@@ -13346,13 +13346,25 @@ router.post("/depasify-webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
+      const currencyData = await currencyDB.findOne({
+        currencySymbol: currency,
+      });
+
+      if (!currencyData) {
+        console.log("Currency not found:", currency);
+
+        return res.sendStatus(200);
+      }
+
       // ✅ save deposit history
 
       await depositDB.create({
         userId: foundUser._id,
+        currency: currencyData._id,
         currencySymbol: currency,
         blockchain_payment_uuid: blockchain_payment_uuid,
         account_id: account_id,
+        depto: blockchain_wallet_id,
         depamt: Number(amount),
         txnid: tx_hash,
         status: 1,
@@ -13405,32 +13417,135 @@ router.post("/depasify-webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (failedEvent === "blockchain_payment_failed") {
-      const { blockchain_payment_uuid, message } = failedAttributes;
-
-      // ✅ duplicate check
-      const alreadyExists = await depositDB.findOne({
+    if (event === "blockchain_payment_sent") {
+      const {
+        transaction_id,
         blockchain_payment_uuid,
+        blockchain_wallet_id,
+        account_id,
+        amount,
+        currency,
+        status,
+        timestamp,
+      } = attributes;
+
+      console.log("Blockchain payment sent webhook:", attributes);
+
+      // ✅ find withdrawal using depasify payment id
+      const withdraw = await withdrawDB.findOne({
+        depasifyPaymentId: blockchain_payment_uuid,
       });
 
-      if (alreadyExists) {
-        console.log("Duplicate failed blockchain payment");
+      if (!withdraw) {
+        console.log("Withdraw not found");
 
         return res.sendStatus(200);
       }
 
-      // ✅ store failed crypto payment
-      await depositDB.create({
-        blockchain_payment_uuid,
-        txnid: blockchain_payment_uuid,
-        status: 2, // failed
-        failureMessage: message,
-      });
+      // ✅ prevent duplicate success updates
+      if (withdraw.status === 2) {
+        console.log("Withdraw already completed");
 
-      console.log("Blockchain payment failed stored");
+        return res.sendStatus(200);
+      }
+
+      // ✅ update withdraw success
+      await withdrawDB.updateOne(
+        {
+          _id: withdraw._id,
+        },
+        {
+          status: 2,
+          txn_id: transaction_id,
+          blockchain_payment_uuid,
+          account_id,
+          // processedDate: new Date(),
+          // webhookStatus: status,
+          // webhookTimestamp: timestamp,
+        },
+      );
+
+      console.log("Withdraw marked completed:", withdraw._id);
 
       return res.sendStatus(200);
     }
+
+  if (failedEvent === "blockchain_payment_failed") {
+    const { blockchain_payment_uuid, message } = failedAttributes;
+
+    console.log("Blockchain payment failed:", failedAttributes);
+
+    // ✅ FIRST CHECK WITHDRAW
+    const withdraw = await withdrawDB.findOne({
+      depasifyPaymentId: blockchain_payment_uuid,
+    });
+
+    // =====================================================
+    // ✅ WITHDRAW FAILED
+    // =====================================================
+    if (withdraw) {
+      // ✅ avoid duplicate processing
+      if (withdraw.status === 4) {
+        console.log("Withdraw already failed");
+
+        return res.sendStatus(200);
+      }
+
+      // ✅ refund user balance
+      await userWalletDB.updateOne(
+        {
+          userId: withdraw.user_id,
+          "wallets.currencyId": withdraw.currency,
+        },
+        {
+          $inc: {
+            "wallets.$.balance": Number(withdraw.totalamount),
+          },
+        },
+      );
+
+      // ✅ update withdraw
+      await withdrawDB.updateOne(
+        {
+          _id: withdraw._id,
+        },
+        {
+          status: 4, // failed
+          failureMessage: message,
+          failedDate: new Date(),
+        },
+      );
+
+      console.log("Withdraw failed and refunded:", withdraw._id);
+
+      return res.sendStatus(200);
+    }
+
+    // =====================================================
+    // ✅ OTHERWISE STORE AS FAILED DEPOSIT
+    // =====================================================
+
+    const alreadyExists = await depositDB.findOne({
+      blockchain_payment_uuid,
+    });
+
+    if (alreadyExists) {
+      console.log("Duplicate failed blockchain deposit");
+
+      return res.sendStatus(200);
+    }
+
+    await depositDB.create({
+      blockchain_payment_uuid,
+      txnid: blockchain_payment_uuid,
+      status: 2, // failed deposit
+      failureMessage: message,
+    });
+
+    console.log("Failed blockchain deposit stored");
+
+    return res.sendStatus(200);
+  }
 
     return res.sendStatus(200);
   } catch (err) {

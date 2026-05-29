@@ -424,7 +424,8 @@ async function processWithdrawal(req, res) {
       // ==========================
       await withdrawDB.findByIdAndUpdate(withdrawotp._id, {
         status: 1,
-        txn_id: tx.data.id,
+        depasifyPaymentId: tx.data.id,
+        // depasifyResponse: tx,
         // processedDate: new Date(),
       });
 
