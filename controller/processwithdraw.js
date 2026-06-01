@@ -13,6 +13,7 @@ var userWalletDB= require ("../schema/userWallet");
 var adminwalletDB= require ("../schema/adminWallet");
 var profitDB = require ("../schema/profit");
 var adminDB = require ("../schema/admin");
+var withdrawBeneficiaryDB = require("../schema/withdrawBeneficiaryDB");
 const speakeasy = require("speakeasy");
 var common = require("../helper/common");
 var antiPhishing = require("../schema/antiphising");
@@ -360,27 +361,66 @@ async function processWithdrawal(req, res) {
       else depaNetwork = currency.currencySymbol;
 
       // 🔥 GET USER WALLET
-      const walletInfo = user.depasifyWallets?.[depaNetwork];
+      // const walletInfo = user.depasifyWallets?.[depaNetwork];
 
-      if (!walletInfo) {
-        return res.json({
-          status: false,
-          message: "Wallet not found for this network",
+      // if (!walletInfo) {
+      //   return res.json({
+      //     status: false,
+      //     message: "Wallet not found for this network",
+      //   });
+      // }
+
+      let beneficiary = await withdrawBeneficiaryDB.findOne({
+        userId: user._id,
+        network: depaNetwork,
+        address: withdrawalAddress,
+      });
+
+      // ✅ SOURCE WALLET ID
+      let sourceWalletId = "";
+
+      // ✅ CREATE NEW BENEFICIARY IF NOT EXISTS
+      if (!beneficiary) {
+        console.log("Creating new source wallet...");
+
+        const sourceWallet = await createSourceWallet(
+          user.depasifyAccountId,
+          withdrawalAddress,
+          depaNetwork,
+          asset,
+        );
+
+        console.log("sourceWallet response-->>", sourceWallet);
+
+        sourceWalletId = sourceWallet.data.id;
+
+        // ✅ SAVE BENEFICIARY
+        beneficiary = await withdrawBeneficiaryDB.create({
+          userId: user._id,
+          accountId: user.depasifyAccountId,
+          network: depaNetwork,
+          asset: asset,
+          address: withdrawalAddress,
+          sourceWalletId: sourceWalletId,
         });
+      } else {
+        console.log("Using existing source wallet");
+
+        sourceWalletId = beneficiary.sourceWalletId;
       }
 
       // 🔥 SEND CRYPTO
       let tx;
 
       try {
-        tx = await sendCryptoDepasify(
-          user.depasifyAccountId,
-          walletInfo.walletId,
-          receiveAmount,
-          asset,
-          withdrawalAddress,
-          depaNetwork,
-        );
+       tx = await sendCryptoDepasify(
+         user.depasifyAccountId,
+         sourceWalletId,
+         receiveAmount,
+         asset,
+         withdrawalAddress,
+         depaNetwork,
+       );
       } catch (err) {
         console.log(
           "Depasify Withdraw Error:",
@@ -412,7 +452,7 @@ async function processWithdrawal(req, res) {
         {
           userId,
           "wallets.currencyId": currencyId,
-          "wallets.balance": { $gte: amount },
+          "wallets.amount": { $gte: amount },
         },
         {
           $inc: {
@@ -444,27 +484,27 @@ async function processWithdrawal(req, res) {
 
       var EXPLOREURL =
         currency.currencySymbol === "BNB"
-          ? `${process.env.EXPLORER_BNB}/${tx.id}`
+          ? `${process.env.EXPLORER_BNB}/${tx.data.id}`
           : currency.currencySymbol === "ETH"
-            ? `${process.env.EXPLORER_LINK}/${tx.id}`
+            ? `${process.env.EXPLORER_LINK}/${tx.data.id}`
             : currency.currencySymbol === "XRP"
-              ? `${process.env.EXPLORER_XRP}/${tx.id}`
+              ? `${process.env.EXPLORER_XRP}/${tx.data.id}`
               : currency.currencySymbol === "BTC"
-                ? `${process.env.EXPLORER_BTC}/${tx.id}`
+                ? `${process.env.EXPLORER_BTC}/${tx.data.id}`
                 : currency.currencySymbol === "TRX"
-                  ? `${process.env.EXPLORER_TRX}/${tx.id}`
+                  ? `${process.env.EXPLORER_TRX}/${tx.data.id}`
                   : currency.currencySymbol === "USDT" &&
                       networkType === "TRC20"
-                    ? `${process.env.EXPLORER_TRX}/${tx.id}`
+                    ? `${process.env.EXPLORER_TRX}/${tx.data.id}`
                     : currency.currencySymbol === "USDT" &&
                         networkType === "ERC20"
-                      ? `${process.env.EXPLORER_LINK}/${tx.id}`
+                      ? `${process.env.EXPLORER_LINK}/${tx.data.id}`
                       : currency.currencySymbol === "USDT" &&
                           networkType === "BEP20"
-                        ? `${process.env.EXPLORER_BNB}/${tx.id}`
+                        ? `${process.env.EXPLORER_BNB}/${tx.data.id}`
                         : currency.currencySymbol === "VTX" &&
                             networkType === "BEP20"
-                          ? `${process.env.EXPLORER_BNB}/${tx.id}`
+                          ? `${process.env.EXPLORER_BNB}/${tx.data.id}`
                           : "";
       var DATE = moment(latestWithdrawal.created_at).format("lll");
       var findDetails = await antiPhishing.findOne({ userid: user._id });
@@ -589,6 +629,30 @@ async function getDepasifyToken() {
 
   console.log("depasifyToken -->>", depasifyToken);
   return depasifyToken;
+}
+
+async function createSourceWallet(accountId, address, network, asset) {
+  const token = await getDepasifyToken();
+
+  const res = await axios.post(
+    `${BASE_URL}/accounts/${accountId}/blockchain_wallets`,
+    {
+      name: `${asset}-${network}-withdraw`,
+      kind: "source",
+      address: address,
+      network: network,
+    },
+    {
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  console.log("Source wallet response:", res.data);
+
+  return res.data;
 }
 
 async function sendCryptoDepasify(accountId, walletId, amount, asset, address, network) {
