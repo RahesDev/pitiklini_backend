@@ -91,11 +91,11 @@ router.post('/fieldvalidate', common.tokenmiddleware, validateWithdrawal, async 
   throw new Error("No recipients defined");
   }
   
-  // await mail.sendMail(mailOptions)
-  //   .then(() =>
+  await mail.sendMail(mailOptions)
+    .then(() =>
       res.json({ status: true, message: 'Withdrawal validated and OTP sent successfully via email.' })
-  //   )
-  // .catch(err => res.json({ status: false, message: err }));
+    )
+  .catch(err => res.json({ status: false, message: err }));
   
   } catch (error) {
     console.log(error,"----error----");

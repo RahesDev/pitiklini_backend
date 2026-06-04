@@ -42,46 +42,90 @@ router.post("/currencyConversion", async (req, res) => {
 router.post('/swapping', common.tokenmiddleware, async (req, res) => {
   try {
     console.log(req.body, req.userId, '==-=-=-=-=-=req.body=-=-=-=-=-=-=-=-=');
-    if (req.body.from != "" && req.body.to != "" && req.body.from_id != "" && req.body.to_id != "" && req.body.fromAmount != "" && req.body.toAmount != "" && req.body.fee != "" && req.body.withFee != "" && req.body.currentPrice != "") {
+    if (
+      req.body.from != "" &&
+      req.body.to != "" &&
+      req.body.from_id != "" &&
+      req.body.to_id != "" &&
+      req.body.fromAmount != undefined &&
+      req.body.toAmount != undefined &&
+      req.body.fee != undefined &&
+      req.body.withFee != undefined &&
+      req.body.currentPrice != undefined
+    ) {
       if (req.body.from_id != req.body.to_id) {
-        let getCurrecy = await currencyDB.findOne({ _id: req.body.from_id }, { _id: 1, maxSwap: 1, minSwap: 1, currencySymbol: 1, swapFee: 1 }).exec({});
+        let getCurrecy = await currencyDB
+          .findOne(
+            { _id: req.body.from_id },
+            { _id: 1, maxSwap: 1, minSwap: 1, currencySymbol: 1, swapFee: 1 },
+          )
+          .exec({});
         if (getCurrecy) {
           // ====================CALCULATION PART=================================//
           // var amounCal = Number(req.body.fromAmount) * Number(getCurrecy.swapFee) / 100;
           // console.log(amounCal,'=-=-=-amounCal',req.body.fromAmount,"req.body.fromAmount",req.body.currentPrice,"req.body.price" );
 
-          var feeCal = Number(req.body.fromAmount) * Number(getCurrecy.swapFee) / 100;
-          console.log(feeCal, '=-=-=-feeCal=-=-=-feeCal-=-=-feeCal-=-');
-          var getToAmount = Number(req.body.fromAmount) * Number(req.body.currentPrice)
+          var feeCal =
+            (Number(req.body.fromAmount) * Number(getCurrecy.swapFee)) / 100;
+          console.log(feeCal, "=-=-=-feeCal=-=-=-feeCal-=-=-feeCal-=-");
+          var getToAmount =
+            Number(req.body.fromAmount) * Number(req.body.currentPrice);
           var totalCal = Number(req.body.fromAmount) + feeCal;
           totalCal = parseFloat(totalCal).toFixed(8);
-          console.log(getCurrecy, '=-=-=-getCurrecy=-=-=-getCurrecy-=-=-getCurrecy-=-');
+          console.log(
+            getCurrecy,
+            "=-=-=-getCurrecy=-=-=-getCurrecy-=-=-getCurrecy-=-",
+          );
           if (+req.body.fromAmount >= getCurrecy.minSwap) {
             if (+req.body.fromAmount <= getCurrecy.maxSwap) {
-              let getWallet = await userWalletDB.findOne({ userId: req.userId }).exec({});
+              let getWallet = await userWalletDB
+                .findOne({ userId: req.userId })
+                .exec({});
               // console.log(getWallet,'=-=-=getWallet=-=-=-');
               if (getWallet) {
                 var wallets = getWallet.wallets;
-                var Indexing = wallets.findIndex(x => x.currencyId == req.body.from_id);
+                var Indexing = wallets.findIndex(
+                  (x) => x.currencyId == req.body.from_id,
+                );
                 if (Indexing != -1) {
                   var balance = parseFloat(wallets[Indexing].amount).toFixed(8);
                   const balanceNum = parseFloat(balance);
                   const totalCalNum = parseFloat(totalCal);
 
                   if (balanceNum >= totalCalNum) {
-                    var toIndexing = wallets.findIndex(x => x.currencyId == req.body.to_id);
+                    var toIndexing = wallets.findIndex(
+                      (x) => x.currencyId == req.body.to_id,
+                    );
                     if (toIndexing != -1) {
-                      var tobalance = parseFloat(wallets[toIndexing].amount).toFixed(8);
-                      console.log('tobalance---', tobalance);
-                      var detuctFrombalance = Number(balance) - Number(totalCal);
-                      var addToBalance = Number(tobalance) + Number(getToAmount);
+                      var tobalance = parseFloat(
+                        wallets[toIndexing].amount,
+                      ).toFixed(8);
+                      console.log("tobalance---", tobalance);
+                      var detuctFrombalance =
+                        Number(balance) - Number(totalCal);
+                      var addToBalance =
+                        Number(tobalance) + Number(getToAmount);
                       var adminFee = Number(feeCal);
-                      console.log(':::detuctFrombalance', detuctFrombalance);
-                      console.log(':::addToBalance', addToBalance);
-                      console.log(':::adminFee', adminFee);
-                      var updateFromBal = await userWalletDB.updateOne({ userId: req.userId, "wallets.currencyId": req.body.from_id }, { "$set": { "wallets.$.amount": +detuctFrombalance } }, { multi: true });
+                      console.log(":::detuctFrombalance", detuctFrombalance);
+                      console.log(":::addToBalance", addToBalance);
+                      console.log(":::adminFee", adminFee);
+                      var updateFromBal = await userWalletDB.updateOne(
+                        {
+                          userId: req.userId,
+                          "wallets.currencyId": req.body.from_id,
+                        },
+                        { $set: { "wallets.$.amount": +detuctFrombalance } },
+                        { multi: true },
+                      );
                       if (updateFromBal) {
-                        var updateTomBal = await userWalletDB.updateOne({ userId: req.userId, "wallets.currencyId": req.body.to_id }, { "$set": { "wallets.$.amount": +addToBalance } }, { multi: true });
+                        var updateTomBal = await userWalletDB.updateOne(
+                          {
+                            userId: req.userId,
+                            "wallets.currencyId": req.body.to_id,
+                          },
+                          { $set: { "wallets.$.amount": +addToBalance } },
+                          { multi: true },
+                        );
                         if (updateTomBal) {
                           var obj = {
                             fromCurrency: req.body.from,
@@ -94,76 +138,115 @@ router.post('/swapping', common.tokenmiddleware, async (req, res) => {
                             userId: req.userId,
                             fromCurrID: req.body.from_id,
                             toCurreID: req.body.to_id,
-                            createdDate: new Date()
-                          }
+                            createdDate: new Date(),
+                          };
                           let swapCreate = await swapDB.create(obj);
 
-                          console.log(`${+req.body.fromAmount} ${req.body.from} to ${+req.body.currentPrice} ${req.body.to} Converted Successfully`, "swapCreate");
+                          console.log(
+                            `${+req.body.fromAmount} ${req.body.from} to ${+req.body.currentPrice} ${req.body.to} Converted Successfully`,
+                            "swapCreate",
+                          );
 
                           var notification = {
                             to_user_id: req.userId,
                             status: 0,
                             message: ` ${+req.body.fromAmount} ${req.body.from} to ${+req.body.currentPrice} ${req.body.to} Converted Successfully`,
                             link: "/notification",
-                          }
+                          };
 
                           let notifica = await notify.create(notification);
 
                           if (swapCreate) {
-
-
                             var profitObj = {
-                              type: 'swap',
+                              type: "swap",
                               user_id: req.userId,
                               currencyid: req.body.from_id,
                               fees: feeCal,
                               fullfees: feeCal,
                               orderid: swapCreate._id,
-                            }
-                            let storeAdminFee = await profitDb.create(profitObj);
+                            };
+                            let storeAdminFee =
+                              await profitDb.create(profitObj);
                             if (storeAdminFee) {
-
-
-
-                              return res.status(200).send({ status: true, Message: "Swaping success !" });
+                              return res.status(200).send({
+                                status: true,
+                                Message: "Swaping success !",
+                              });
                             } else {
-                              return res.status(200).send({ status: false, Message: "Please try again later!" })
+                              return res.status(200).send({
+                                status: false,
+                                Message: "Please try again later!",
+                              });
                             }
                           } else {
-                            return res.status(200).send({ status: false, Message: "Please try again later!" })
+                            return res.status(200).send({
+                              status: false,
+                              Message: "Please try again later!",
+                            });
                           }
                         } else {
-                          return res.status(200).send({ status: false, Message: "Please try again later!" })
+                          return res.status(200).send({
+                            status: false,
+                            Message: "Please try again later!",
+                          });
                         }
                       } else {
-                        return res.status(200).send({ status: false, Message: "Please try again later!" })
+                        return res.status(200).send({
+                          status: false,
+                          Message: "Please try again later!",
+                        });
                       }
                     } else {
-                      return res.status(200).send({ status: false, Message: "Please try again later!" })
+                      return res.status(200).send({
+                        status: false,
+                        Message: "Please try again later!",
+                      });
                     }
                   } else {
-                    return res.status(200).send({ status: false, Message: "Insufficient Balance !" });
+                    return res.status(200).send({
+                      status: false,
+                      Message: "Insufficient Balance !",
+                    });
                   }
                 } else {
-                  return res.status(200).send({ status: false, Message: "Please try again later!" })
+                  return res.status(200).send({
+                    status: false,
+                    Message: "Please try again later!",
+                  });
                 }
               } else {
-                return res.status(200).send({ status: false, Message: "Please try again later!" })
+                return res
+                  .status(200)
+                  .send({ status: false, Message: "Please try again later!" });
               }
             } else {
-              return res.status(200).send({ status: false, Message: "Please enter maximum " + getCurrecy.maxSwap + " amount" });
+              return res.status(200).send({
+                status: false,
+                Message:
+                  "Please enter maximum " + getCurrecy.maxSwap + " amount",
+              });
             }
           } else {
-            return res.status(200).send({ status: false, Message: "Please enter minimum " + getCurrecy.minSwap + " amount" });
+            return res.status(200).send({
+              status: false,
+              Message: "Please enter minimum " + getCurrecy.minSwap + " amount",
+            });
           }
         } else {
-          return res.status(200).send({ status: false, Message: "Please try again later!" })
+          return res
+            .status(200)
+            .send({ status: false, Message: "Please try again later!" });
         }
       } else {
-        return res.status(400).send({ status: false, Message: "Should not allowed same currency swapping" })
+        return res.status(400).send({
+          status: false,
+          Message: "Should not allowed same currency swapping",
+        });
       }
     } else {
-      return res.status(400).send({ status: false, Message: "Please fill all fields!" });
+      return res
+        .status(400)
+        .send({ status: false, Message: "Please fill all fields!" });
     }
 
   } catch (error) {
