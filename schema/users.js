@@ -30,6 +30,7 @@ const UserSchema = mongoose.Schema({
   otp: { type: Number, default: "" },
   otpstatus: { type: Number, default: 0 },
   zip: { type: String, default: "" },
+  CountryCode: { type: String, default: "" },
   Addressproof: { type: String, default: "" },
   AddressproofStatus: { type: Number, default: 0 },
   IdProof: { type: String, default: "" },
