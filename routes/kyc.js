@@ -550,6 +550,49 @@ router.post(
 // });
 
 router.post(
+  "/save-kyc-basic-details",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const {
+        fullname,
+        surname,
+        dob,
+        nationality,
+        residential,
+        city,
+        postalcode,
+      } = req.body;
+
+      await usersDB.updateOne(
+        { _id: req.userId },
+        {
+          fullName: fullname,
+          lastname: surname,
+          dob: dob,
+          CountryCode: nationality,
+          Address1: residential,
+          city: city,
+          PostalCode: postalcode,
+        },
+      );
+
+      return res.json({
+        status: true,
+        message: "Details saved",
+      });
+    } catch (err) {
+      console.log(err);
+
+      return res.json({
+        status: false,
+        message: "Failed to save details",
+      });
+    }
+  },
+);
+
+router.post(
   "/start-verification",
   common.tokenmiddleware,
   async (req, res) => {

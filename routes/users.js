@@ -13689,10 +13689,10 @@ router.post(
         `&scenario=direct_card_payment` +
         `&identification_id=${user.depasifyIdentificationId}` +
         `&amount=${amount}` +
-        `&name=${encodeURIComponent(user.firstname)}` +
+        `&name=${encodeURIComponent(user.fullname)}` +
         `&surname=${encodeURIComponent(user.lastname)}` +
         `&address=${encodeURIComponent(user.Address1)}` +
-        `&postal_code=${encodeURIComponent(user.zip)}` +
+        `&postal_code=${encodeURIComponent(user.PostalCode)}` +
         `&city=${encodeURIComponent(user.city)}` +
         `&country_code=${encodeURIComponent(user.CountryCode)}` +
         `&redirect_url=${redirectUrl}`;
