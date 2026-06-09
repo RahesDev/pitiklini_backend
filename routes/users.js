@@ -12975,13 +12975,13 @@ router.post("/depasify-webhook", async (req, res) => {
             kycRequested: false,
             depasifyIdentificationId: identificationData.id,
             depasifyIdentificationAccountId: identificationData.account_id,
-            firstname: identificationData.first_name || "",
-            lastname: identificationData.last_name || "",
-            Address1: identificationData.address || "",
-            city: identificationData.city || "",
-            zip: identificationData.postal_code || "",
-            CountryCode: identificationData.country_code || "",
             kycLastStartedAt: null,
+            // firstname: identificationData.first_name || "",
+            // lastname: identificationData.last_name || "",
+            // Address1: identificationData.address || "",
+            // city: identificationData.city || "",
+            // zip: identificationData.postal_code || "",
+            // CountryCode: identificationData.country_code || "",
           },
         );
 
@@ -13689,7 +13689,7 @@ router.post(
         `&scenario=direct_card_payment` +
         `&identification_id=${user.depasifyIdentificationId}` +
         `&amount=${amount}` +
-        `&name=${encodeURIComponent(user.fullname)}` +
+        `&name=${encodeURIComponent(user.fullName)}` +
         `&surname=${encodeURIComponent(user.lastname)}` +
         `&address=${encodeURIComponent(user.Address1)}` +
         `&postal_code=${encodeURIComponent(user.PostalCode)}` +
