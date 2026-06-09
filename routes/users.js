@@ -13687,7 +13687,7 @@ router.post(
       const widgetUrl =
         `https://widget.depa.finance/?partner=Pitiklini` +
         `&scenario=direct_card_payment` +
-        `&identification_id=${user.depasifyIdentificationId}` +
+        `&identification_id=${user.depasifyExternalUuid}` +
         `&amount=${amount}` +
         `&name=${encodeURIComponent(user.fullName)}` +
         `&surname=${encodeURIComponent(user.lastname)}` +
