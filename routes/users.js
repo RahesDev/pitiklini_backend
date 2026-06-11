@@ -13686,7 +13686,7 @@ router.post(
       //   `&redirect_url=${redirectUrl}`;
       const widgetUrl =
         `https://widget.depa.finance/?partner=Pitiklini` +
-        `&scenario=direct_card_payment` +
+        `&scenario=direct_bank_payment` +
         `&identification_id=${user.depasifyExternalUuid}` +
         `&amount=${amount}` +
         `&name=${encodeURIComponent(user.fullName)}` +
@@ -13695,6 +13695,7 @@ router.post(
         `&postal_code=${encodeURIComponent(user.PostalCode)}` +
         `&city=${encodeURIComponent(user.city)}` +
         `&country_code=${encodeURIComponent(user.CountryCode)}` +
+        `&continuebutton=False` +
         `&redirect_url=${redirectUrl}`;
 
       return res.json({
