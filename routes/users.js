@@ -13695,8 +13695,9 @@ router.post(
         `&postal_code=${encodeURIComponent(user.PostalCode)}` +
         `&city=${encodeURIComponent(user.city)}` +
         `&country_code=${encodeURIComponent(user.CountryCode)}` +
-        `&continuebutton=False` +
         `&redirect_url=${redirectUrl}`;
+      
+      // `&continuebutton=False` +
 
       return res.json({
         status: true,
