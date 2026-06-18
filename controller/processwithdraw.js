@@ -661,8 +661,8 @@ async function sendCryptoDepasify(accountId, walletId, amount, asset, address, n
     const payload = {
       amount: Number(parseFloat(amount).toFixed(8)),
       currency: asset,
-      destination_address: address,
-      network: network,
+      // destination_address: address,
+      // network: network,
     };
 
   console.log("DEPASIFY PAYLOAD:", payload);
