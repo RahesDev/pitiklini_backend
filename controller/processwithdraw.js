@@ -357,7 +357,10 @@ async function processWithdrawal(req, res) {
       if (networkType === "ERC20") depaNetwork = "ETHEREUM";
       else if (networkType === "TRC20") depaNetwork = "TRON";
       else if (networkType === "BEP20") depaNetwork = "BSC";
+      else if (currency.currencySymbol === "ETH") depaNetwork = "ETHEREUM";
       else if (currency.currencySymbol === "TRX") depaNetwork = "TRON";
+      else if (currency.currencySymbol === "BNB") depaNetwork = "BSC";
+      else if (currency.currencySymbol === "BTC") depaNetwork = "BITCOIN";
       else depaNetwork = currency.currencySymbol;
 
       // 🔥 GET USER WALLET
