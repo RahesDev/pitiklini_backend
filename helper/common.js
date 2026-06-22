@@ -7063,7 +7063,7 @@ async function fetchCryptoComparePrices(fiat_from, fiat_to) {
     // console.log("response fetchCryptoComparePrices =========", response);
 
     if (response.data.Response === "Error") {
-      const fallbackUrl = `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fiat_from.join(",")}&tsyms=${fiat_to.join(",")}&api_key=${process.env.cryptocompare_api_3}`;
+      const fallbackUrl = `https://min-api.cryptocompare.com/data/pricemulti?fsyms=${fiat_from.join(",")}&tsyms=${fiat_to.join(",")}&api_key=${process.env.cryptocompare_api_2}`;
       response = await axios.get(fallbackUrl);
     }
 
