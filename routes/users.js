@@ -53,6 +53,7 @@ const { UserNewclient } = require("../redis-helper/userRedis");
 
 const bankdb = require("../schema/bankdetails");
 const subscriberDB = require("../schema/subscriber");
+const portfolioHistoryDB = require("../schema/portfolioHistoryDB");
 
 const redisHelper = require("../services/redis");
 const geoip = require("geoip-lite");
@@ -2879,6 +2880,22 @@ router.post("/getUserTotalbalanceAll", common.tokenmiddleware, (req, res) => {
                         : inorder_balance_usdt,
                   };
 
+                  const today = moment().format("YYYY-MM-DD");
+
+                  await portfolioHistoryDB.findOneAndUpdate(
+                    {
+                      userId: req.userId,
+                      snapshotDate: today,
+                    },
+                    {
+                      totalBalanceUSDT: balance.total_balance_new || 0,
+                    },
+                    {
+                      upsert: true,
+                      new: true,
+                    },
+                  );
+
                   // console.log("---=-=-=-balance=-=-=- :",balance);
                   //var walletcount = await userWalletDB.findOne({ userId: mongoose.Types.ObjectId(req.userId) }).exec();
                   var walletcount = await userWalletDB
@@ -3081,6 +3098,22 @@ router.post("/getUserTotalbalanceAll", common.tokenmiddleware, (req, res) => {
                           inorder_balance: inorder_balance_usdt,
                         };
                         console.log("---=-=-=-balance=-=-=-2----2 :", balance);
+                        const today = moment().format("YYYY-MM-DD");
+
+                        await portfolioHistoryDB.findOneAndUpdate(
+                          {
+                            userId: req.userId,
+                            snapshotDate: today,
+                          },
+                          {
+                            totalBalanceUSDT: balance.total_balance_new || 0,
+                          },
+                          {
+                            upsert: true,
+                            new: true,
+                          },
+                        );
+                        
                         //var walletcount = await userWalletDB.findOne({ userId: mongoose.Types.ObjectId(req.userId) }).exec();
                         var walletcount = await userWalletDB
                           .aggregate([
@@ -11323,6 +11356,136 @@ router.get("/getUserStatus", common.tokenmiddleware, async (req, res) => {
 //     return res.status(500).json({ message: "Internal server error." });
 //   }
 // });
+
+router.post(
+  "/getPortfolioHistory",
+  common.tokenmiddleware,
+  async (req, res) => {
+    try {
+      const moment = require("moment");
+
+      const data = await portfolioHistoryDB.find({
+        userId: req.userId,
+      });
+
+      const map = {};
+
+      data.forEach((item) => {
+        map[item.snapshotDate] = item.totalBalanceUSDT;
+      });
+
+      const result = [];
+
+      for (let i = 4; i >= 0; i--) {
+        const date = moment().subtract(i, "days").format("YYYY-MM-DD");
+
+        result.push({
+          date: moment(date).format("DD/MM"),
+
+          value: map[date] || 0,
+        });
+      }
+
+      return res.status(200).json({
+        status: true,
+
+        data: result,
+      });
+    } catch (err) {
+      console.log(err);
+
+      return res.status(200).json({
+        status: false,
+      });
+    }
+  },
+);
+
+cron.schedule(
+  "0 0 * * *",
+  async () => {
+    try {
+      console.log("Portfolio Snapshot Started");
+
+      const users = await usersDB.find({}, { _id: 1 });
+
+      const today = moment().format("YYYY-MM-DD");
+
+      for (const user of users) {
+        let totalBalanceUSDT = 0;
+
+        const walletData = await userWalletDB.aggregate([
+          {
+            $match: {
+              userId: mongoose.Types.ObjectId(user._id),
+            },
+          },
+          {
+            $unwind: "$wallets",
+          },
+          {
+            $lookup: {
+              from: "currency",
+              localField: "wallets.currencyId",
+              foreignField: "_id",
+              as: "currdetail",
+            },
+          },
+        ]);
+
+        for (const item of walletData) {
+          const symbol = item.currdetail?.[0]?.currencySymbol;
+
+          if (!symbol) continue;
+
+          let usdtPrice = 0;
+
+          const pair = symbol.toLowerCase() + "usdt";
+
+          const redisPrice = await RedisService.hget(
+            "BINANCE-TICKERPRICE",
+            pair,
+          );
+
+          if (redisPrice && redisPrice.lastprice) {
+            usdtPrice = Number(redisPrice.lastprice.lastprice);
+          }
+
+          const balance = Number(item.wallets.amount || 0);
+
+          const hold = Number(item.wallets.holdAmount || 0);
+
+          const p2p = Number(item.wallets.p2p || 0);
+
+          const p2phold = Number(item.wallets.p2phold || 0);
+
+          totalBalanceUSDT += (balance + hold + p2p + p2phold) * usdtPrice;
+        }
+
+        await portfolioHistoryDB.findOneAndUpdate(
+          {
+            userId: user._id,
+            snapshotDate: today,
+          },
+          {
+            totalBalanceUSDT,
+          },
+          {
+            upsert: true,
+            new: true,
+          },
+        );
+      }
+
+      console.log("Portfolio Snapshot Completed");
+    } catch (err) {
+      console.log("Portfolio Snapshot Error", err);
+    }
+  },
+  {
+    timezone: "Asia/Kolkata",
+  },
+);
 
 router.get("/dropEndaction", async (req, res) => {
   try {
