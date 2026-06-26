@@ -151,7 +151,7 @@ router.post('/swapping', common.tokenmiddleware, async (req, res) => {
                             to_user_id: req.userId,
                             status: 0,
                             message: ` ${+req.body.fromAmount} ${req.body.from} to ${+req.body.currentPrice} ${req.body.to} Converted Successfully`,
-                            link: "/notification",
+                            link: "/swapHistory",
                           };
 
                           let notifica = await notify.create(notification);
@@ -378,7 +378,7 @@ router.post('/walletTransfer', common.isEmpty, common.tokenmiddleware, async (re
             let checkBalance = fromWallet == "Spot" ? walletData.amount >= Number(amount) : fromWallet == "P2P" ? walletData.p2p >= Number(amount) : fromWallet == "Future" ? walletData.future >= Number(amount) : false;
             if (checkBalance == true) {
               var obj = { currencyId: currency, currency: walletData.currencySymbol, amount: amount, fromWallet: fromWallet, toWallet: toWallet, userId: userId, createdDate: new Date() };
-              var notifyDatas = { to_user_id: ObjectId(userId), message: "Internal transfer done successfully", link: "/notificationHistory", status: 0 }
+              var notifyDatas = { to_user_id: ObjectId(userId), message: "Internal transfer done successfully", link: "/internaltransferhistory", status: 0 }
               let transferSuccess = false;
               if (fromWallet == "Spot" && toWallet == "P2P") {
                 var spotBalance = walletData.amount - amount;
