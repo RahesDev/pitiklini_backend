@@ -1240,10 +1240,17 @@ router.post("/p2p_confirm_order", common.tokenmiddleware, async (req, res) => {
     };
 
     await notifyDB.create(notification);
+    // common.sendResponseSocket(
+    //   "success",
+    //   notification.message,
+    //   "notify",
+    //   notification.to_user_id,
+    //   () => { }
+    // );
     common.sendResponseSocket(
       "success",
       notification.message,
-      "notify",
+      "notifySingle",
       notification.to_user_id,
       () => { }
     );
@@ -1833,12 +1840,19 @@ router.post(
               link: "/p2p/chat/" + confirmation.orderId,
             };
             let notification = await notifyDB.create(obj);
+            // common.sendResponseSocket(
+            //   "success",
+            //   notification.message,
+            //   "notify",
+            //   notification.to_user_id,
+            //   function () { }
+            // );
             common.sendResponseSocket(
               "success",
               notification.message,
-              "notify",
+              "notifySingle",
               notification.to_user_id,
-              function () { }
+              function () {},
             );
 
             let newRec = {
