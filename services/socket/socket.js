@@ -218,21 +218,25 @@ const startSocket = (app) => {
 					// console.log(socket.user_id, "Original Data:", originalData);
 				
 					const notifications = await notifydb
-						.find({ to_user_id: originalData })
+						.find({
+						to_user_id: originalData,
+						status: 0,
+						})
 						.sort({ _id: -1 })
 						.exec();
-
-					const status = await notifydb
-						.find({ status: 0, to_user_id: originalData })
-						.count();
 
 					socket.emit("updatenotifications", {
 						to: socket.user_id,
 						data: {
 							"notification": notifications,
-							"status": status
+							"status": notifications.length
 						},
 					});
+
+					// const status = await notifydb
+					// 	.find({ status: 0, to_user_id: originalData })
+					// 	.count();
+					
 				}, 1000)
 				}
 			});

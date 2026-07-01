@@ -42,8 +42,8 @@ var p2pOrderSchema = mongoose.Schema({
         default : 0
     },
     paymentMethod: {
-        type: String,
-        default : ""
+        type: [String],
+        default: []
     },
     orderType: {
         type: String,

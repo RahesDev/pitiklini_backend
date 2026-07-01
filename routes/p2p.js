@@ -233,7 +233,7 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
       !maxQuantity ||
       !cryptoCurrency ||
       !fiatCurrency ||
-      !preferredPayment ||
+      !preferredPayment || preferredPayment.length === 0 ||
       !paymentTime
     ) {
       return res.json({
@@ -251,34 +251,49 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
       });
     }
 
-    let bankData;
-    if (preferredPayment === "All Payment") {
-      // Fetch all bank data types
-      const bankTypes = ["IMPS", "UPID", "Paytm"];
-      bankData = await Promise.all(
-        bankTypes.map((type) => bankdb.find({ userid: req.userId, type }))
-      );
+    // let bankData;
 
-      if (bankData.some((data) => !data || data.length === 0)) {
-        return res.json({
-          status: false,
-          Message: `Please update your payment details.`,
-          bank: true,
-        });
-      }
-    } else {
-      bankData = await bankdb.findOne({
-        userid: req.userId,
-        type: preferredPayment,
+    const bankData = await bankdb.find({
+      userid: req.userId,
+      type: {
+        $in: preferredPayment,
+      },
+    });
+
+    if (bankData.length !== preferredPayment.length) {
+      return res.json({
+        status: false,
+        Message: "Please update your selected payment method details.",
+        bank: true,
       });
-      if (!bankData) {
-        return res.json({
-          status: false,
-          Message: `Please update your ${preferredPayment} details.`,
-          bank: true,
-        });
-      }
     }
+    // if (preferredPayment === "All Payment") {
+    //   // Fetch all bank data types
+    //   const bankTypes = ["IMPS", "UPID", "Paytm"];
+    //   bankData = await Promise.all(
+    //     bankTypes.map((type) => bankdb.find({ userid: req.userId, type }))
+    //   );
+
+    //   if (bankData.some((data) => !data || data.length === 0)) {
+    //     return res.json({
+    //       status: false,
+    //       Message: `Please update your payment details.`,
+    //       bank: true,
+    //     });
+    //   }
+    // } else {
+    //   bankData = await bankdb.findOne({
+    //     userid: req.userId,
+    //     type: preferredPayment,
+    //   });
+    //   if (!bankData) {
+    //     return res.json({
+    //       status: false,
+    //       Message: `Please update your ${preferredPayment} details.`,
+    //       bank: true,
+    //     });
+    //   }
+    // }
 
     const userDetail = await usersDB.findOne(
       { _id: req.userId },
@@ -771,7 +786,7 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
         status: { $in: ["active", "partially"] },
         userId: { $ne: userId },
       })
-      .populate("userId", "displayname profile_image location ratings")
+      .populate("userId", "displayname uuid profile_image location ratings")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -825,6 +840,7 @@ router.post("/getAllp2pOrder", common.tokenmiddleware, async (req, res) => {
             firstCurrency: order.firstCurrency,
             secondCurrency: order.secondCurrnecy,
             displayname: order.userId.displayname || "Unknown",
+            uuid: order.userId.uuid || "Unknown",
             price: parseFloat(order.price).toFixed(2),
             fromLimit: order.fromLimit,
             toLimit: order.toLimit,
@@ -1219,20 +1235,23 @@ router.post("/p2p_confirm_order", common.tokenmiddleware, async (req, res) => {
 
     const from_user = await usersDB.findOne(
       { _id: ObjectId(userId) },
-      { displayname: 1 }
+      { displayname: 1, uuid: 1 },
     );
     const to_user = await usersDB.findOne(
       { _id: ObjectId(p2pdet.userId) },
-      { displayname: 1 }
+      { displayname: 1, uuid: 1 },
     );
 
-    const notificationMessage = `${from_user.displayname} has confirmed the order for ${confirmation.askAmount} ${p2pdet.firstCurrency} ${p2pdet.orderType} order`;
+    // const notificationMessage = `${from_user.displayname} has confirmed the order for ${confirmation.askAmount} ${p2pdet.firstCurrency} ${p2pdet.orderType} order`;
+    const notificationMessage = `${from_user.uuid} has confirmed the order for ${confirmation.askAmount} ${p2pdet.firstCurrency} ${p2pdet.orderType} order`;
     const notification = {
       from_user_id: ObjectId(userId),
       to_user_id: ObjectId(to_user._id),
       p2porderId: ObjectId(p2pdet._id),
-      from_user_name: from_user.displayname,
-      to_user_name: to_user.displayname,
+      from_user_name: from_user.uuid,
+      to_user_name: to_user.uuid,
+      // from_user_name: from_user.displayname,
+      // to_user_name: to_user.displayname,
       status: 0,
       type: "p2p",
       message: notificationMessage,
@@ -1250,7 +1269,7 @@ router.post("/p2p_confirm_order", common.tokenmiddleware, async (req, res) => {
     common.sendResponseSocket(
       "success",
       notification.message,
-      "notifySingle",
+      "notifysingle",
       notification.to_user_id,
       () => { }
     );
@@ -1259,14 +1278,15 @@ router.post("/p2p_confirm_order", common.tokenmiddleware, async (req, res) => {
     const chatMessages = [
       {
         userId: ObjectId(to_user._id),
-        user_name: to_user.displayname,
+        // user_name: to_user.displayname,
+        user_name: to_user.uuid,
         user_msg:
           "Important: Please DO NOT share payment proof or communicate with counterpart outside the Pitiklini P2P platform to avoid scam. Payment proof shared outside the P2P platform can be misused. Any P2P related conversations should be carried out only in the order chat",
         type: "advertiser",
       },
       {
         userId: ObjectId(userId),
-        user_name: from_user.displayname,
+        user_name: from_user.uuid,
         user_msg:
           "Do not release the crypto until you receive payment from buyer",
         type: "advertiser",
@@ -1813,23 +1833,25 @@ router.post(
             var message = "Order Confirmed Successfully";
             let from_user = await usersDB.findOne(
               { _id: ObjectId(userId) },
-              { displayname: 1 }
+              { displayname: 1, uuid: 1 },
             );
             let to_user = await usersDB.findOne(
               { _id: ObjectId(p2pdet.userId) },
-              { displayname: 1 }
+              { displayname: 1, uuid: 1 },
             );
             var obj = {
               from_user_id: ObjectId(userId),
               to_user_id: ObjectId(to_user._id),
               p2porderId: ObjectId(p2pdet._id),
-              from_user_name: from_user.displayname,
-              to_user_name: to_user.displayname,
+              from_user_name: from_user.uuid,
+              to_user_name: to_user.uuid,
+              // from_user_name: from_user.displayname,
+              // to_user_name: to_user.displayname,
               status: 0,
               type: "p2p",
               message:
                 "" +
-                from_user.displayname +
+                from_user.uuid +
                 " has confirmed the order for " +
                 confirmation.askAmount +
                 " " +
@@ -1850,14 +1872,14 @@ router.post(
             common.sendResponseSocket(
               "success",
               notification.message,
-              "notifySingle",
+              "notifysingle",
               notification.to_user_id,
               function () {},
             );
 
             let newRec = {
               userId: ObjectId(userId),
-              user_name: from_user.displayname,
+              user_name: from_user.uuid,
               user_msg:
                 "Important: Please DO NOT share payment proof or communicate with counter part outside the Pitiklini P2P platform to avoid scam. Payment proof shared outside the P2P platform can be misused. Any P2P related conversations should be carried out only in the order chat",
               user_file: "",
@@ -1872,7 +1894,7 @@ router.post(
             // new msg added to seller
             let newRec_sell = {
               userId: ObjectId(to_user._id),
-              user_name: to_user.displayname,
+              user_name: to_user.uuid,
               user_msg:
                 "Important: Please DO NOT share payment proof or communicate with counter part outside the Pitiklini P2P platform to avoid scam. Payment proof shared outside the P2P platform can be misused. Any P2P related conversations should be carried out only in the order chat",
               user_file: "",
@@ -1906,7 +1928,7 @@ router.post(
 
             let newRec2 = {
               userId: ObjectId(userId),
-              user_name: from_user.displayname,
+              user_name: from_user.uuid,
               user_msg:
                 "Please make payment before within time limit to avoid the cancellation of order",
               user_file: "",
@@ -1940,10 +1962,10 @@ router.post(
 
             let newRec1 = {
               advertiserId: ObjectId(to_user._id),
-              adv_name: to_user.displayname,
+              adv_name: to_user.uuid,
               adv_msg:
                 "" +
-                to_user.displayname +
+                to_user.uuid +
                 " has created the order please wait till buyer make payment",
               adv_file: "",
               p2porderId: ObjectId(confirmation._id),
@@ -1976,7 +1998,7 @@ router.post(
 
             let newRec3 = {
               advertiserId: ObjectId(to_user._id),
-              adv_name: to_user.displayname,
+              adv_name: to_user.uuid,
               adv_msg:
                 "Do not release the crypto until you receive payment from buyer",
               adv_file: "",
@@ -2180,7 +2202,7 @@ router.post("/getp2pOrder", common.tokenmiddleware, async (req, res) => {
       .findOne({
         orderId: getconfirmOrders.map_orderId,
       })
-      .populate("userId", "displayname profile_image");
+      .populate("userId", "displayname uuid profile_image");
     
     // let verification = await verificationDB.findOne({
     //   external_id: getOrders.userId._id.toString(),
@@ -2228,6 +2250,7 @@ router.post("/getp2pOrder", common.tokenmiddleware, async (req, res) => {
       userId: {
         _id: common.encrypt(getOrders.userId._id.toString()),
         displayname: getOrders.userId.displayname,
+        uuid: getOrders.userId.uuid,
         orgName: orgName,
       },
       fromCurrency: getOrders.fromCurrency,
@@ -2569,11 +2592,11 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
       if (bodyData.type == "advertiser") {
         var userId = req.userId;
         let userdetail = await usersDB
-          .findOne({ _id: req.userId }, { email: 1, displayname: 1 })
+          .findOne({ _id: req.userId }, { email: 1, displayname: 1, uuid: 1 })
           .exec();
         let newRec = {
           advertiserId: ObjectId(userId),
-          adv_name: userdetail.displayname,
+          adv_name: userdetail.uuid,
           adv_msg: bodyData.message,
           adv_file: bodyData.file ? bodyData.file : "",
           p2porderId: ObjectId(bodyData.p2porderId),
@@ -2597,11 +2620,17 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
           var opp_detail = "";
           if (userId.toString() == p2pdet.map_userId.toString()) {
             opp_detail = await usersDB
-              .findOne({ _id: p2pdet.userId }, { email: 1, displayname: 1 })
+              .findOne(
+                { _id: p2pdet.userId },
+                { email: 1, displayname: 1, uuid: 1 },
+              )
               .exec();
           } else {
             opp_detail = await usersDB
-              .findOne({ _id: p2pdet.map_userId }, { email: 1, displayname: 1 })
+              .findOne(
+                { _id: p2pdet.map_userId },
+                { email: 1, displayname: 1, uuid: 1 },
+              )
               .exec();
           }
           let attachment_msg = bodyData.file ? "& sent attachement" : "";
@@ -2620,13 +2649,15 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
             from_user_id: ObjectId(userId),
             to_user_id: Object(opp_detail._id),
             p2porderId: ObjectId(p2pdet._id),
-            from_user_name: userdetail.displayname,
-            to_user_name: opp_detail.displayname,
+            from_user_name: userdetail.uuid,
+            to_user_name: opp_detail.uuid,
+            // from_user_name: userdetail.displayname,
+            // to_user_name: opp_detail.displayname,
             status: 0,
             type: "p2p",
             message:
               "" +
-              userdetail.displayname +
+              userdetail.uuid +
               " has sent  " +
               bodyData.message +
               " " +
@@ -2657,11 +2688,11 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
       } else {
         var userId = req.userId;
         let userdetail = await usersDB
-          .findOne({ _id: req.userId }, { email: 1, displayname: 1 })
+          .findOne({ _id: req.userId }, { email: 1, displayname: 1, uuid: 1 })
           .exec();
         let newRec = {
           userId: ObjectId(userId),
-          user_name: userdetail.displayname,
+          user_name: userdetail.uuid,
           user_msg: bodyData.message,
           user_file: bodyData.file ? bodyData.file : "",
           p2porderId: ObjectId(bodyData.p2porderId),
@@ -2684,11 +2715,14 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
           var opp_detail = "";
           if (userId.toString() == p2pdet.map_userId.toString()) {
             opp_detail = await usersDB
-              .findOne({ _id: p2pdet.userId }, { email: 1, displayname: 1 })
+              .findOne(
+                { _id: p2pdet.userId },
+                { email: 1, displayname: 1, uuid: 1 },
+              )
               .exec();
           } else {
             opp_detail = await usersDB
-              .findOne({ _id: p2pdet.map_userId }, { email: 1, displayname: 1 })
+              .findOne({ _id: p2pdet.map_userId }, { email: 1, displayname: 1, uuid: 1 })
               .exec();
           }
           if(getChat != null)
@@ -2707,13 +2741,15 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
             from_user_id: ObjectId(userId),
             to_user_id: ObjectId(opp_detail._id),
             p2porderId: ObjectId(p2pdet._id),
-            from_user_name: userdetail.displayname,
-            to_user_name: opp_detail.displayname,
+            from_user_name: userdetail.uuid,
+            to_user_name: opp_detail.uuid,
+            // from_user_name: userdetail.displayname,
+            // to_user_name: opp_detail.displayname,
             status: 0,
             type: "p2p",
             message:
               "" +
-              userdetail.displayname +
+              userdetail.uuid +
               " has sent  " +
               bodyData.message +
               " " +
@@ -3050,22 +3086,25 @@ router.post(
             var message = "Payment Confirmed Successfully";
             let from_user = await usersDB.findOne(
               { _id: ObjectId(userId) },
-              { displayname: 1, email: 1 }
+              { displayname: 1, email: 1, uuid: 1 },
             );
             let to_user = await usersDB.findOne(
               { _id: ObjectId(p2pdet.map_userId) },
-              { displayname: 1 }
+              { displayname: 1, uuid: 1 },
             );
             var opp_detail = "";
             if (userId.toString() == p2pdet.map_userId.toString()) {
               opp_detail = await usersDB
-                .findOne({ _id: p2pdet.userId }, { email: 1, displayname: 1 })
+                .findOne(
+                  { _id: p2pdet.userId },
+                  { email: 1, displayname: 1, uuid: 1 },
+                )
                 .exec();
             } else {
               opp_detail = await usersDB
                 .findOne(
                   { _id: p2pdet.map_userId },
-                  { email: 1, displayname: 1 }
+                  { email: 1, displayname: 1, uuid: 1 },
                 )
                 .exec();
             }
@@ -3074,13 +3113,15 @@ router.post(
               from_user_id: ObjectId(userId),
               to_user_id: ObjectId(opp_detail._id),
               p2porderId: ObjectId(p2pdet._id),
-              from_user_name: from_user.displayname,
-              to_user_name: opp_detail.displayname,
+              from_user_name: from_user.uuid,
+              to_user_name: opp_detail.uuid,
+              // from_user_name: from_user.displayname,
+              // to_user_name: opp_detail.displayname,
               status: 0,
               type: "p2p",
               message:
                 "" +
-                from_user.displayname +
+                from_user.uuid +
                 " has confirmed the payment for your " +
                 p2pdet.askAmount +
                 " " +
@@ -3101,7 +3142,7 @@ router.post(
 
             let newRec = {
               advertiserId: ObjectId(opp_detail._id),
-              adv_name: opp_detail.displayname,
+              adv_name: opp_detail.uuid,
               adv_msg: "Please wait till seller release crypto",
               adv_file: "",
               p2porderId: ObjectId(p2pdet._id),
@@ -3515,7 +3556,7 @@ router.post("/dispute_order", common.tokenmiddleware, async (req, res) => {
       .exec();
 
     const from_user = await usersDB
-      .findOne({ _id: ObjectId(userId) }, { displayname: 1 })
+      .findOne({ _id: ObjectId(userId) }, { displayname: 1, uuid: 1 })
       .exec();
 
     var opp_detail = "";
@@ -3574,13 +3615,13 @@ router.post("/dispute_order", common.tokenmiddleware, async (req, res) => {
 
 
     const newRec1 = {
-      "userId": ObjectId(userId),
-      "user_name": from_user.displayname,
-      "user_msg": query,
-      "user_file": attachment || "",
+      userId: ObjectId(userId),
+      user_name: from_user.uuid,
+      user_msg: query,
+      user_file: attachment || "",
       p2porderId: ObjectId(p2pdet._id),
       orderId: p2pdet.orderId,
-      "user_date": Date.now(),
+      user_date: Date.now(),
       type:
         p2p_order.userId.toString() === userId.toString()
           ? "advertiser"
