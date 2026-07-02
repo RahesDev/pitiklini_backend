@@ -132,80 +132,218 @@ const getCurrencyConversion = async () => {
   }
 };
 
-router.post("/fetch_price", common.tokenmiddleware, async (req, res) => {
-  try {
-    var firstCurrency = req.body.fromCurrency;
-    var secondCurrency = req.body.toCurrency;
-    var pair = firstCurrency + secondCurrency;
-    console.log("firstCurrency==", firstCurrency);
-    console.log("secondCurrency==", secondCurrency);
-    let currency_det = await currencyDB.findOne({
-      currencySymbol: firstCurrency,
-    });
+// router.post("/fetch_price", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     var firstCurrency = req.body.fromCurrency;
+//     var secondCurrency = req.body.toCurrency;
+//     var pair = firstCurrency + secondCurrency;
+//     console.log("firstCurrency==", firstCurrency);
+//     console.log("secondCurrency==", secondCurrency);
+//     let currency_det = await currencyDB.findOne({
+//       currencySymbol: firstCurrency,
+//     });
 
-    let high = await p2pOrdersDB
-      .find({
-        status: { $in: ["filled"] },
-        firstCurrency: firstCurrency,
-        secondCurrnecy: secondCurrency,
-        orderType: "sell",
-      })
-      .sort({ price: -1 });
-    let low = await p2pOrdersDB
-      .find({
-        status: { $in: ["partially", "active"] },
-        firstCurrency: firstCurrency ? firstCurrency : "",
-        secondCurrnecy: secondCurrency ? secondCurrency : "",
-        orderType: "buy",
-      })
-      .sort({ price: 1 });
+//     let high = await p2pOrdersDB
+//       .find({
+//         status: { $in: ["filled"] },
+//         firstCurrency: firstCurrency,
+//         secondCurrnecy: secondCurrency,
+//         orderType: "sell",
+//       })
+//       .sort({ price: -1 });
+//     let low = await p2pOrdersDB
+//       .find({
+//         status: { $in: ["partially", "active"] },
+//         firstCurrency: firstCurrency ? firstCurrency : "",
+//         secondCurrnecy: secondCurrency ? secondCurrency : "",
+//         orderType: "buy",
+//       })
+//       .sort({ price: 1 });
 
-    // Check if high array is not empty, then find the highest price, otherwise set to 0 or a default value
-    const highestPrice =
-      high && high.length > 0
-        ? high.reduce(
-            (max, order) => (order.price > max ? order.price : max),
-            high[0].price
-          )
-        : ""; // Default value if high array is empty
+//     // Check if high array is not empty, then find the highest price, otherwise set to 0 or a default value
+//     const highestPrice =
+//       high && high.length > 0
+//         ? high.reduce(
+//             (max, order) => (order.price > max ? order.price : max),
+//             high[0].price
+//           )
+//         : ""; // Default value if high array is empty
 
-    // Check if low array is not empty, then find the lowest price, otherwise set to 0 or a default value
-    const lowestPrice =
-      low && low.length > 0
-        ? low.reduce(
-            (min, order) => (order.price < min ? order.price : min),
-            low[0].price
-          )
-        : ""; // Default value if low array is empty
+//     // Check if low array is not empty, then find the lowest price, otherwise set to 0 or a default value
+//     const lowestPrice =
+//       low && low.length > 0
+//         ? low.reduce(
+//             (min, order) => (order.price < min ? order.price : min),
+//             low[0].price
+//           )
+//         : ""; // Default value if low array is empty
 
-    const allPairs = await getCurrencyConversion();
+//     const allPairs = await getCurrencyConversion();
 
-    console.log("allPairs=====",allPairs);
+//     console.log("allPairs=====",allPairs);
 
-    if (!allPairs || !allPairs[firstCurrency]) {
-      console.log("prices not found");
-      return null;
-    }
+//     if (!allPairs || !allPairs[firstCurrency]) {
+//       console.log("prices not found");
+//       return null;
+//     }
 
-    const currency_prices = allPairs[firstCurrency]; // { BTC: x, USDT: y, INR: z, EUR: k }
+//     const currency_prices = allPairs[firstCurrency]; // { BTC: x, USDT: y, INR: z, EUR: k }
     
 
-    // Prepare the response
-    var resp = {
-      highprice: highestPrice,
-      lowprice: lowestPrice,
-      firstCurrency: firstCurrency,
-      secondCurrency: secondCurrency,
-      price: (currency_prices != null) ? parseFloat(currency_prices[secondCurrency]).toFixed(2) : 0
-    };
+//     // Prepare the response
+//     var resp = {
+//       highprice: highestPrice,
+//       lowprice: lowestPrice,
+//       firstCurrency: firstCurrency,
+//       secondCurrency: secondCurrency,
+//       price: (currency_prices != null) ? parseFloat(currency_prices[secondCurrency]).toFixed(2) : 0
+//     };
 
-    // Return the response as JSON
-    return res.json({ status: true, data: resp });
+//     // Return the response as JSON
+//     return res.json({ status: true, data: resp });
 
-    //}
+//     //}
+//   } catch (error) {
+//     console.log("catch error===", error);
+//     return res.json({ status: false, message: error.message });
+//   }
+// });
+
+router.post("/fetch_price", common.tokenmiddleware, async (req, res) => {
+  try {
+    const firstCurrency = req.body.fromCurrency;
+    const secondCurrency = req.body.toCurrency;
+
+    // -------------------------
+    // Highest SELL Order Price
+    // -------------------------
+    const sellResult = await p2pOrdersDB.aggregate([
+      {
+        $match: {
+          firstCurrency,
+          secondCurrnecy: secondCurrency,
+          orderType: "sell",
+          status: {
+            $in: ["active", "partially", "filled"],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          highprice: { $max: "$price" },
+        },
+      },
+    ]);
+
+    // -------------------------
+    // Lowest BUY Order Price
+    // -------------------------
+    const buyResult = await p2pOrdersDB.aggregate([
+      {
+        $match: {
+          firstCurrency,
+          secondCurrnecy: secondCurrency,
+          orderType: "buy",
+          status: {
+            $in: ["active", "partially", "filled"],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          lowprice: { $min: "$price" },
+        },
+      },
+    ]);
+
+    const highestPrice =
+      sellResult.length > 0 ? Number(sellResult[0].highprice) : null;
+
+    const lowestPrice =
+      buyResult.length > 0 ? Number(buyResult[0].lowprice) : null;
+
+    let finalPrice = 0;
+
+    // =====================================================
+    // Use P2P Market Price
+    // =====================================================
+    if (highestPrice !== null && lowestPrice !== null) {
+      finalPrice = Number(((highestPrice + lowestPrice) / 2).toFixed(2));
+    } else {
+      // =====================================================
+      // Fallback to Currency Conversion
+      // =====================================================
+      const allPairs = await getCurrencyConversion();
+
+      if (
+        allPairs &&
+        allPairs[firstCurrency] &&
+        allPairs[firstCurrency][secondCurrency]
+      ) {
+        finalPrice = Number(
+          parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
+        );
+      } else {
+        finalPrice = 0;
+      }
+    }
+
+    return res.json({
+      status: true,
+      data: {
+        firstCurrency,
+        secondCurrency,
+        highprice: highestPrice ?? "",
+        lowprice: lowestPrice ?? "",
+        price: finalPrice,
+      },
+    });
   } catch (error) {
-    console.log("catch error===", error);
-    return res.json({ status: false, message: error.message });
+    console.log("fetch_price error:", error);
+
+    // ============================
+    // If anything unexpected fails,
+    // still try currency conversion
+    // ============================
+
+    try {
+      const firstCurrency = req.body.fromCurrency;
+      const secondCurrency = req.body.toCurrency;
+
+      const allPairs = await getCurrencyConversion();
+
+      let price = 0;
+
+      if (
+        allPairs &&
+        allPairs[firstCurrency] &&
+        allPairs[firstCurrency][secondCurrency]
+      ) {
+        price = Number(
+          parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
+        );
+      }
+
+      return res.json({
+        status: true,
+        data: {
+          firstCurrency,
+          secondCurrency,
+          highprice: "",
+          lowprice: "",
+          price,
+        },
+      });
+    } catch (err) {
+      console.log("Currency conversion fallback failed:", err);
+
+      return res.json({
+        status: false,
+        message: err.message,
+      });
+    }
   }
 });
 
