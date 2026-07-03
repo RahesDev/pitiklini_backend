@@ -2,8 +2,8 @@
 
 var version = "2.0.4";
 
-var https = require("https");
-// var https = require("http");
+// var https = require("https");
+var https = require("http");
 
 var quandlCache = {};
 
@@ -76,13 +76,14 @@ function sendError(error, response) {
 function httpGet(datafeedHost, path, callback) {
   //console.log(datafeedHost,'datafeedHost')
   //console.log(path,'pathdata')
+  // console.log(options);
   var options = {
-    host: datafeedHost,
+    host: "127.0.0.1",
     path: path,
     rejectUnauthorized: false,
     port: process.env.PORT,
     method: "GET",
-    headers: {"Content-Type": "application/json"},
+    headers: { "Content-Type": "application/json" },
     // strictSSL: true
   };
   //console.log(options,"options");
@@ -594,7 +595,7 @@ RequestProcessor.prototype._sendSymbolHistory = function (
     to +
     "&resolution=" +
     resolution;
-  httpGet("localhost", address, function (result) {
+  httpGet("127.0.0.1", address, function (result) {
     if (response.finished) {
       return;
     }
@@ -608,7 +609,7 @@ RequestProcessor.prototype._sendSymbolHistory = function (
     var filteredData = filterDataPeriod(
       data,
       startDateTimestamp,
-      endDateTimestamp
+      endDateTimestamp,
     );
     logForData(filteredData, key, false);
     //console.log(JSON.stringify(filteredData),'JSON.stringify(filteredData)')
