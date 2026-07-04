@@ -407,6 +407,7 @@ router.post('/login', common.isEmpty, async (req, res) => {
                     to_user_id: ObjectId(findUser._id),
                     to_user_name: findUser.displayname,
                     status: 0,
+                    viewed: 0,
                     IP: ip_address,
                     message: "Login successfully",
                     link: "/loginHistory",
@@ -459,9 +460,10 @@ router.post('/login', common.isEmpty, async (req, res) => {
                     to_user_id: ObjectId(findUser._id),
                     to_user_name: findUser.displayname,
                     status: 0,
+                    viewed: 0,
                     IP: ip_address,
                     message: "Login successfully",
-                    link:"/loginHistory"
+                    link: "/loginHistory",
                   };
                   let notification = await notifydb.create(objNotify);
                   let userAttempts = await LoginAttemptDB.updateOne({ email: common.encrypt(email) }, { $set: { lockoutUntil: null, attempts: 0 } });

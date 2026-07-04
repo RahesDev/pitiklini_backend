@@ -273,6 +273,7 @@ async function processWithdrawal(req, res) {
       var notification = {
         to_user_id: req.userId,
         status: 0,
+        viewed: 0,
         message: `Your withdrawal request has been sent to the admin for manual approval.`,
         link: "/withdrawHistory",
       };
@@ -546,6 +547,7 @@ async function processWithdrawal(req, res) {
       var notification = {
         to_user_id: req.userId,
         status: 0,
+        viewed: 0,
         message: `Transaction is being processed. Please wait for confirmation..`,
         link: "/withdrawHistory",
       };

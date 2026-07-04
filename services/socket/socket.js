@@ -224,14 +224,26 @@ const startSocket = (app) => {
 						})
 						.sort({ _id: -1 })
 						.exec();
+					
+					const unread = await notifydb
+            .find({
+              to_user_id: originalData,
+              viewed: 0,
+            })
+						.sort({ _id: -1 });
+					
+					const newCount = await notifydb.countDocuments({
+            to_user_id: originalData,
+            status: 0,
+          });
 
 					socket.emit("updatenotifications", {
-						to: socket.user_id,
-						data: {
-							"notification": notifications,
-							"status": notifications.length
-						},
-					});
+            to: socket.user_id,
+            data: {
+              notification: unread,
+              status: newCount,
+            },
+          });
 
 					// const status = await notifydb
 					// 	.find({ status: 0, to_user_id: originalData })

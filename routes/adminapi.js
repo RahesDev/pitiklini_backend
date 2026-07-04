@@ -4651,6 +4651,7 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
         from_user_name: "Admin",
         to_user_name: "Admin",
         status: 0,
+        viewed: 0,
         type: "p2p",
         message: `Admin has sent ${message}${attachmentMsg}`,
         link: `/p2p/dispute/${orderId}`,
@@ -6840,6 +6841,7 @@ router.post("/release_coin", common.tokenmiddleware, async (req, res) => {
                       from_user_name: from_user.username,
                       to_user_name: to_user.username,
                       status: 0,
+                      viewed: 0,
                       message:
                         "" +
                         from_user.username +
@@ -6979,6 +6981,7 @@ router.post("/release_coin", common.tokenmiddleware, async (req, res) => {
                   from_user_name: from_user.username,
                   to_user_name: to_user.username,
                   status: 0,
+                  viewed: 0,
                   message:
                     "" +
                     from_user.username +

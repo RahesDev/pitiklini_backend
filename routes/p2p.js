@@ -1182,29 +1182,32 @@ router.post("/buyer_pay_cancel", common.tokenmiddleware, async (req, res) => {
 
 
     if (p2pUpdate.nModified > 0 && p2pConfirm) {
-      const from_user = await usersDB.findOne({ _id: ObjectId(userId) }, { displayname: 1 });
+      const from_user = await usersDB.findOne({ _id: ObjectId(userId) }, { displayname: 1, uuid: 1 });
       const to_userId = userId.toString() === orderDetail.map_userId.toString() ? orderDetail.userId : orderDetail.map_userId;
 
       console.log(from_user, to_userId);
 
       const to_user = await usersDB.findOne(
         { _id: to_userId },
-        { email: 1, displayname: 1 }
+        { email: 1, displayname: 1, uuid: 1 },
       );
 
       console.log(to_user, "to_user");
 
 
-      const notificationMessage = `${from_user.displayname} has cancelled the order for ${orderDetail.askAmount} ${p2pdetail.firstCurrency} ${p2pdetail.orderType} order`;
+      const notificationMessage = `${from_user.uuid} has cancelled the order for ${orderDetail.askAmount} ${p2pdetail.firstCurrency} ${p2pdetail.orderType} order`;
       console.log(notificationMessage, "to_user");
 
       const notification = await notifyDB.create({
         from_user_id: ObjectId(userId),
         to_user_id: ObjectId(to_user._id),
         p2porderId: ObjectId(p2pdetail._id),
-        from_user_name: from_user.displayname,
-        to_user_name: to_user.displayname,
+        from_user_name: from_user.uuid,
+        to_user_name: to_user.uuid,
+        // from_user_name: from_user.displayname,
+        // to_user_name: to_user.displayname,
         status: 0,
+        viewed: 0,
         type: "p2p",
         message: notificationMessage,
         link: `/p2p/chat/${orderDetail.orderId}`,
@@ -1391,6 +1394,7 @@ router.post("/p2p_confirm_order", common.tokenmiddleware, async (req, res) => {
       // from_user_name: from_user.displayname,
       // to_user_name: to_user.displayname,
       status: 0,
+      viewed: 0,
       type: "p2p",
       message: notificationMessage,
       link: "/p2p/chat/" + confirmation.orderId,
@@ -1574,13 +1578,13 @@ router.post(
 
                   let from_user = await usersDB.findOne(
                     { _id: ObjectId(userId) },
-                    { displayname: 1 , email: 1 }
+                    { displayname: 1 , email: 1, uuid: 1 }
                   );
                   let to_user = await usersDB.findOne(
                     {
                       _id: ObjectId(confirmation.map_userId),
                     },
-                    { displayname: 1 }
+                    { displayname: 1, uuid: 1 }
                   );
                   var opp_detail = "";
                   if (
@@ -1589,14 +1593,14 @@ router.post(
                     opp_detail = await usersDB
                       .findOne(
                         { _id: confirmation.userId },
-                        { email: 1, displayname: 1 }
+                        { email: 1, displayname: 1, uuid: 1 },
                       )
                       .exec();
                   } else {
                     opp_detail = await usersDB
                       .findOne(
                         { _id: confirmation.map_userId },
-                        { email: 1, displayname: 1 }
+                        { email: 1, displayname: 1, uuid: 1 }
                       )
                       .exec();
                   }
@@ -1604,13 +1608,16 @@ router.post(
                     from_user_id: ObjectId(userId),
                     to_user_id: ObjectId(opp_detail._id),
                     p2porderId: ObjectId(confirmation._id),
-                    from_user_name: from_user.displayname,
-                    to_user_name: opp_detail.displayname,
+                    from_user_name: from_user.uuid,
+                    to_user_name: opp_detail.uuid,
+                    // from_user_name: from_user.displayname,
+                    // to_user_name: opp_detail.displayname,
                     status: 0,
+                    viewed: 0,
                     type: "p2p",
                     message:
                       "" +
-                      from_user.displayname +
+                      from_user.uuid +
                       " has released the crypto for your " +
                       confirmation.askAmount +
                       " " +
@@ -1636,7 +1643,7 @@ router.post(
                       var reciver = common.decrypt(opp_detail.email);
                       var etempdataDynamic = resData.body
                         .replace(/###MESSAGE###/g, obj.message)
-                        .replace(/###USERNAME###/g, opp_detail.displayname);
+                        .replace(/###USERNAME###/g, opp_detail.uuid);
                       var mailRes = await mail.sendMail({
                         from: {
                           name: process.env.FROM_NAME,
@@ -1746,25 +1753,25 @@ router.post(
 
                   let from_user = await usersDB.findOne(
                     { _id: ObjectId(userId) },
-                    { displayname: 1, email: 1 }
+                    { displayname: 1, email: 1, uuid: 1 }
                   );
                   let to_user = await usersDB.findOne(
                     { _id: ObjectId(confirmation.map_userId) },
-                    { displayname: 1 }
+                    { displayname: 1, uuid: 1 }
                   );
                   var opp_detail = "";
                   if (userId.toString() == confirmation.map_userId.toString()) {
                     opp_detail = await usersDB
                       .findOne(
                         { _id: confirmation.userId },
-                        { email: 1, displayname: 1 }
+                        { email: 1, displayname: 1, uuid: 1 }
                       )
                       .exec();
                   } else {
                     opp_detail = await usersDB
                       .findOne(
                         { _id: confirmation.map_userId },
-                        { email: 1, displayname: 1 }
+                        { email: 1, displayname: 1, uuid: 1 }
                       )
                       .exec();
                   }
@@ -1772,13 +1779,16 @@ router.post(
                     from_user_id: ObjectId(userId),
                     to_user_id: ObjectId(opp_detail._id),
                     p2porderId: ObjectId(confirmation._id),
-                    from_user_name: from_user.displayname,
-                    to_user_name: opp_detail.displayname,
+                    from_user_name: from_user.uuid,
+                    to_user_name: opp_detail.uuid,
+                    // from_user_name: from_user.displayname,
+                    // to_user_name: opp_detail.displayname,
                     type: "p2p",
                     status: 0,
+                    viewed: 0,
                     message:
                       "" +
-                      from_user.displayname +
+                      from_user.uuid +
                       " has released the crypto for your " +
                       confirmation.askAmount +
                       " " +
@@ -1805,7 +1815,7 @@ router.post(
                       var reciver = common.decrypt(opp_detail.email);
                       var etempdataDynamic = resData.body
                         .replace(/###MESSAGE###/g, obj.message)
-                        .replace(/###USERNAME###/g, opp_detail.displayname);
+                        .replace(/###USERNAME###/g, opp_detail.uuid);
                       var mailRes = await mail.sendMail({
                         from: {
                           name: process.env.FROM_NAME,
@@ -1986,6 +1996,7 @@ router.post(
               // from_user_name: from_user.displayname,
               // to_user_name: to_user.displayname,
               status: 0,
+              viewed: 0,
               type: "p2p",
               message:
                 "" +
@@ -2578,10 +2589,10 @@ router.post("/seller_confirm", common.tokenmiddleware, async (req, res) => {
       );
 
       const [fromUser, toUser] = await Promise.all([
-        usersDB.findOne({ _id: ObjectId(userId) }, { username: 1 }),
+        usersDB.findOne({ _id: ObjectId(userId) }, { username: 1, uuid: 1 }),
         usersDB.findOne(
           { _id: ObjectId(confirmation.userId) },
-          { username: 1 }
+          { username: 1, uuid: 1 },
         ),
       ]);
 
@@ -2589,11 +2600,14 @@ router.post("/seller_confirm", common.tokenmiddleware, async (req, res) => {
         from_user_id: ObjectId(userId),
         to_user_id: ObjectId(toUser._id),
         p2porderId: ObjectId(p2pOrder._id),
-        from_user_name: fromUser.username,
-        to_user_name: toUser.username,
+        from_user_name: fromUser.uuid,
+        to_user_name: toUser.uuid,
+        // from_user_name: fromUser.username,
+        // to_user_name: toUser.username,
         type: "p2p",
         status: 0,
-        message: `${fromUser.username} has released the crypto for your ${confirmation.askAmount} ${p2pOrder.firstCurrency} ${p2pOrder.orderType} order`,
+        viewed: 0,
+        message: `${fromUser.uuid} has released the crypto for your ${confirmation.askAmount} ${p2pOrder.firstCurrency} ${p2pOrder.orderType} order`,
         link: `/p2p/chat/${p2pOrder.orderId}`,
       });
 
@@ -2681,10 +2695,10 @@ router.post("/seller_confirm", common.tokenmiddleware, async (req, res) => {
       );
 
       const [fromUser, toUser] = await Promise.all([
-        usersDB.findOne({ _id: ObjectId(userId) }, { username: 1 }),
+        usersDB.findOne({ _id: ObjectId(userId) }, { username: 1, uuid: 1 }),
         usersDB.findOne(
           { _id: ObjectId(confirmation.map_userId) },
-          { username: 1 }
+          { username: 1, uuid: 1 }
         ),
       ]);
 
@@ -2692,11 +2706,14 @@ router.post("/seller_confirm", common.tokenmiddleware, async (req, res) => {
         from_user_id: ObjectId(userId),
         to_user_id: ObjectId(toUser._id),
         p2porderId: ObjectId(p2pOrder._id),
-        from_user_name: fromUser.username,
-        to_user_name: toUser.username,
+        from_user_name: fromUser.uuid,
+        to_user_name: toUser.uuid,
+        // from_user_name: fromUser.username,
+        // to_user_name: toUser.username,
         type: "p2p",
         status: 0,
-        message: `${fromUser.username} has released the crypto for your ${confirmation.askAmount} ${p2pOrder.firstCurrency} ${p2pOrder.orderType} order`,
+        viewed: 0,
+        message: `${fromUser.uuid} has released the crypto for your ${confirmation.askAmount} ${p2pOrder.firstCurrency} ${p2pOrder.orderType} order`,
         link: `/p2p/chat/${p2pOrder.orderId}`,
       });
 
@@ -2792,6 +2809,7 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
             // from_user_name: userdetail.displayname,
             // to_user_name: opp_detail.displayname,
             status: 0,
+            viewed: 0,
             type: "p2p",
             message:
               "" +
@@ -2884,6 +2902,7 @@ router.post("/p2p_chat", common.tokenmiddleware, async (req, res) => {
             // from_user_name: userdetail.displayname,
             // to_user_name: opp_detail.displayname,
             status: 0,
+            viewed: 0,
             type: "p2p",
             message:
               "" +
@@ -3001,6 +3020,7 @@ router.post("/p2p_dispute_chat", common.tokenmiddleware, async (req, res) => {
       from_user_name: senderDetail.displayname,
       to_user_name: "Admin",
       status: 0,
+      viewed: 0,
       type: "p2p",
       message: `${senderDetail.displayname} has sent ${message}${attachmentMsg}`,
       link: `/p2p/chat/${orderId}`,
@@ -3088,24 +3108,74 @@ router.post(
       }
 
 
+      // if (p2pupdate && p2pconfirm) {
+      //   common.sendCommonSocket(
+      //     "success",
+      //     "ordercancel",
+      //     "ordercancel",
+      //     () => { }
+      //   );
+      //   return res.json({
+      //     status: true,
+      //     Message: "Timeout Order cancelled, Please try again",
+      //   });
+      // }
+      
       if (p2pupdate && p2pconfirm) {
+        try {
+          const userDetails = await usersDB.findById(orderDetail.userId);
+
+          if (userDetails) {
+            const resData = await mailtempDB.findOne({
+              key: "P2P_ORDER_CANCELLED",
+            });
+
+            if (resData) {
+              const receiver = common.decrypt(userDetails.email);
+
+              const emailBody = resData.body
+                .replace(/###USERNAME###/g, userDetails.uuid)
+                .replace(/###ORDERID###/g, orderDetail.orderId)
+                .replace(/###AMOUNT###/g, orderDetail.askAmount)
+                .replace(/###CURRENCY###/g, p2pdetail.fromCurrency)
+                .replace(
+                  /###DATE###/g,
+                  new Date().toLocaleString("en-IN", {
+                    timeZone: "Asia/Kolkata",
+                  }),
+                );
+
+              await mail.sendMail({
+                from: {
+                  name: process.env.FROM_NAME,
+                  address: process.env.FROM_EMAIL,
+                },
+                to: receiver,
+                subject: resData.Subject,
+                html: emailBody,
+              });
+            }
+          }
+        } catch (mailError) {
+          console.log("P2P Cancel Mail Error:", mailError);
+        }
+
         common.sendCommonSocket(
           "success",
           "ordercancel",
           "ordercancel",
-          () => { }
+          () => {},
         );
+
         return res.json({
           status: true,
           Message: "Timeout Order cancelled, Please try again",
         });
       } else {
-        return res
-          .status(500)
-          .json({
-            status: false,
-            Message: "Something went wrong, please try again",
-          });
+        return res.status(500).json({
+          status: false,
+          Message: "Something went wrong, please try again",
+        });
       }
     } catch (error) {
       console.error("Error in cancel_confirm_order:", error);
@@ -3256,6 +3326,7 @@ router.post(
               // from_user_name: from_user.displayname,
               // to_user_name: opp_detail.displayname,
               status: 0,
+              viewed: 0,
               type: "p2p",
               message:
                 "" +
@@ -3319,7 +3390,7 @@ router.post(
               console.log(reciver, "reciver");
               var etempdataDynamic = resData.body
                 .replace(/###MESSAGE###/g, obj.message)
-                .replace(/###USERNAME###/g, opp_detail.displayname);
+                .replace(/###USERNAME###/g, opp_detail.uuid);
               var mailRes = await mail.sendMail({
                 from: {
                   name: process.env.FROM_NAME,
@@ -3398,6 +3469,44 @@ router.post(
         { orderId },
         { $set: { status: 3 } }
       );
+
+      const userDetails = await usersDB.findById(p2pdet.userId);
+
+      if (userDetails) {
+        try {
+          const resData = await mailtempDB.findOne({
+            key: "P2P_ORDER_CANCELLED",
+          });
+
+          if (resData) {
+            const receiver = common.decrypt(userDetails.email);
+
+            const emailBody = resData.body
+              .replace(/###USERNAME###/g, userDetails.uuid)
+              .replace(/###ORDERID###/g, p2pdet.orderId)
+              .replace(/###AMOUNT###/g, p2pdet.askAmount)
+              .replace(/###CURRENCY###/g, getOrder.fromCurrency)
+              .replace(
+                /###DATE###/g,
+                new Date().toLocaleString("en-IN", {
+                  timeZone: "Asia/Kolkata",
+                }),
+              );
+
+            await mail.sendMail({
+              from: {
+                name: process.env.FROM_NAME,
+                address: process.env.FROM_EMAIL,
+              },
+              to: receiver,
+              subject: resData.Subject,
+              html: emailBody,
+            });
+          }
+        } catch (mailError) {
+          console.log("P2P Cancel Mail Error:", mailError);
+        }
+      }
 
       if (updatedOrder && update_p2p) {
         res.json({ status: true, Message: "Order cancelled successfully" });
@@ -3700,11 +3809,11 @@ router.post("/dispute_order", common.tokenmiddleware, async (req, res) => {
     var opp_detail = "";
     if (userId.toString() == p2pdet.map_userId.toString()) {
       opp_detail = await usersDB
-        .findOne({ _id: p2pdet.userId }, { email: 1, username: 1 })
+        .findOne({ _id: p2pdet.userId }, { email: 1, username: 1, uuid: 1 })
         .exec();
     } else {
       opp_detail = await usersDB
-        .findOne({ _id: p2pdet.map_userId }, { email: 1, username: 1 })
+        .findOne({ _id: p2pdet.map_userId }, { email: 1, username: 1, uuid: 1 })
         .exec();
     }
 
@@ -3712,11 +3821,14 @@ router.post("/dispute_order", common.tokenmiddleware, async (req, res) => {
       from_user_id: ObjectId(userId),
       to_user_id: ObjectId(opp_detail._id),
       p2porderId: ObjectId(p2pdet._id),
-      from_user_name: from_user.displayname,
-      to_user_name: opp_detail.displayname,
+      from_user_name: from_user.uuid,
+      to_user_name: opp_detail.uuid,
+      // from_user_name: from_user.displayname,
+      // to_user_name: opp_detail.displayname,
       status: 0,
+      viewed: 0,
       type: "p2p",
-      message: `${from_user.displayname} has raised dispute for the order ${p2pdet.askAmount} ${p2pdet.fromCurrency} ${p2pdet.type} order. Please resolve this issue within the next 20 minutes. Failure to resolve it in time may result in your account being temporarily frozen for further investigation.`,
+      message: `${from_user.uuid} has raised dispute for the order ${p2pdet.askAmount} ${p2pdet.fromCurrency} ${p2pdet.type} order. Please resolve this issue within the next 20 minutes. Failure to resolve it in time may result in your account being temporarily frozen for further investigation.`,
       link: `/p2p/chat/${p2pdet.orderId}`,
     });
 

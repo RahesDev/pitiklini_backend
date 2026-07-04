@@ -2721,6 +2721,7 @@ router.post("/admin_withdraw_approve", async (req, res) => {
                                   to_user_id: ObjectId(findUser._id),
                                   to_user_name: req.body.uname,
                                   status: 0,
+                                  viewed: 0,
                                   message: "Withdraw approved successfully",
                                   link: "/notificationHistory",
                                 };
@@ -4701,6 +4702,7 @@ router.post("/send_withdraw_otp", common.tokenmiddleware, (req, res) => {
                 to_user_id: ObjectId(user_id),
                 to_user_name: userData.username,
                 status: 0,
+                viewed: 0,
                 message: "Withdraw Requesed OTP send your email",
                 link: "/notificationHistory",
               };

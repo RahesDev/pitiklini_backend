@@ -1387,6 +1387,7 @@ router.post("/login", common.isEmpty, async (req, res) => {
                                 to_user_id: ObjectId(data._id),
                                 to_user_name: data.username,
                                 status: 0,
+                                viewed: 0,
                                 IP: ip_address,
                                 message: "Login successfully",
                                 link: "/notificationHistory",
@@ -1716,6 +1717,7 @@ router.post("/login", common.isEmpty, async (req, res) => {
                             to_user_id: ObjectId(data._id),
                             to_user_name: data.username,
                             status: 0,
+                            viewed: 0,
                             IP: ip_address,
                             message: "Login successfully",
                             link: "/notificationHistory",
@@ -2043,6 +2045,30 @@ router.post("/notifyStateChange", common.tokenmiddleware, async (req, res) => {
   } catch (error) {
     console.log("ERROR FROM getSessionHisotry::", error);
     return res.json({ status: false, Message: "Internal server error" });
+  }
+});
+
+router.post("/notificationViewed", common.tokenmiddleware, async (req, res) => {
+  try {
+    await notifydb.updateOne(
+      {
+        _id: req.body.notificationId,
+        to_user_id: req.userId,
+      },
+      {
+        $set: {
+          viewed: 1,
+        },
+      },
+    );
+
+    return res.json({
+      status: true,
+    });
+  } catch (err) {
+    return res.json({
+      status: false,
+    });
   }
 });
 
@@ -4204,6 +4230,7 @@ router.post("/tfa_login", (req, res) => {
                       to_user_id: ObjectId(resData._id),
                       to_user_name: resData.username,
                       status: 0,
+                      viewed: 0,
                       message: "Login successfully",
                       link: "/notificationHistory",
                     };
@@ -8912,6 +8939,7 @@ router.post("/login_mobile", common.isEmpty, async (req, res) => {
                             to_user_id: ObjectId(data._id),
                             to_user_name: data.username,
                             status: 0,
+                            viewed: 0,
                             IP: ip_address,
                             message: "Login successfully",
                             link: "/notificationHistory",
