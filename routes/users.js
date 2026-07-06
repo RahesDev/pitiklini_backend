@@ -11429,92 +11429,6 @@ router.post(
   },
 );
 
-cron.schedule(
-  "0 0 * * *",
-  async () => {
-    try {
-      console.log("Portfolio Snapshot Started");
-
-      const users = await usersDB.find({}, { _id: 1 });
-
-      const today = moment().format("YYYY-MM-DD");
-
-      for (const user of users) {
-        let totalBalanceUSDT = 0;
-
-        const walletData = await userWalletDB.aggregate([
-          {
-            $match: {
-              userId: mongoose.Types.ObjectId(user._id),
-            },
-          },
-          {
-            $unwind: "$wallets",
-          },
-          {
-            $lookup: {
-              from: "currency",
-              localField: "wallets.currencyId",
-              foreignField: "_id",
-              as: "currdetail",
-            },
-          },
-        ]);
-
-        for (const item of walletData) {
-          const symbol = item.currdetail?.[0]?.currencySymbol;
-
-          if (!symbol) continue;
-
-          let usdtPrice = 0;
-
-          const pair = symbol.toLowerCase() + "usdt";
-
-          const redisPrice = await RedisService.hget(
-            "BINANCE-TICKERPRICE",
-            pair,
-          );
-
-          if (redisPrice && redisPrice.lastprice) {
-            usdtPrice = Number(redisPrice.lastprice.lastprice);
-          }
-
-          const balance = Number(item.wallets.amount || 0);
-
-          const hold = Number(item.wallets.holdAmount || 0);
-
-          const p2p = Number(item.wallets.p2p || 0);
-
-          const p2phold = Number(item.wallets.p2phold || 0);
-
-          totalBalanceUSDT += (balance + hold + p2p + p2phold) * usdtPrice;
-        }
-
-        await portfolioHistoryDB.findOneAndUpdate(
-          {
-            userId: user._id,
-            snapshotDate: today,
-          },
-          {
-            totalBalanceUSDT,
-          },
-          {
-            upsert: true,
-            new: true,
-          },
-        );
-      }
-
-      console.log("Portfolio Snapshot Completed");
-    } catch (err) {
-      console.log("Portfolio Snapshot Error", err);
-    }
-  },
-  {
-    timezone: "Asia/Kolkata",
-  },
-);
-
 router.get("/dropEndaction", async (req, res) => {
   try {
     const airdropSettings = await AirdropSettingsDB.findOne({});
@@ -14075,68 +13989,127 @@ router.get("/getCurrencieslanding", async (req, res) => {
   }
 });
 
-router.post("/payment_history", common.tokenmiddleware, (req, res) => {
+// router.post("/payment_history", common.tokenmiddleware, (req, res) => {
+//   try {
+//     console.log("req.body====", req.body);
+//     if (req.body.FilPerpage != "" || req.body.FilPage != "") {
+//       var perPage = Number(req.body.FilPerpage ? req.body.FilPerpage : 0);
+//       var page = Number(req.body.FilPage ? req.body.FilPage : 0);
+//       var skippage = perPage * page - perPage;
+//       Payment.find({ userId: req.userId.toString() })
+//         .skip(skippage)
+//         .limit(perPage)
+//         .sort({ _id: -1 })
+//         .exec(function (err, data) {
+//           Payment.find({ userId: req.userId.toString() })
+//             .countDocuments()
+//             .exec(function (err1, count) {
+//               if (err) {
+//                 return res.json({
+//                   status: false,
+//                   message: "Something went wrong, Please try again later",
+//                 });
+//               } else {
+//                 var history = [];
+//                 for (var i = 0; i < data.length; i++) {
+//                   var status = "";
+//                   if (data[i].paymentStatus == "pending") {
+//                     status = "Pending";
+//                   } else {
+//                     status = "Completed";
+//                   }
+//                   var txn_id = "";
+//                   if (data[i].sessionId != "") {
+//                     txn_id = data[i].sessionId;
+//                   } else {
+//                     txn_id = "--------";
+//                   }
+//                   var obj = {
+//                     amount: data[i].amount,
+//                     currency: data[i].currencySymbol,
+//                     txn_id: txn_id,
+//                     status: status,
+//                     created_at: data[i].createdAt,
+//                   };
+//                   history.push(obj);
+//                 }
+//                 var returnJson = {
+//                   status: true,
+//                   result: history,
+//                   current: page,
+//                   pages: Math.ceil(count / perPage),
+//                 };
+//                 res.json(returnJson);
+//               }
+//             });
+//         });
+//     } else {
+//       return res
+//         .status(400)
+//         .json({ status: false, Message: "Please enter pagination fields" });
+//     }
+//   } catch (error) {
+//     console.log("withdraw catch===", error);
+//     res.json({
+//       status: false,
+//       message: "Something went wrong, Please try again later",
+//     });
+//   }
+// });
+
+router.post("/payment_history", common.tokenmiddleware, async (req, res) => {
   try {
-    console.log("req.body====", req.body);
-    if (req.body.FilPerpage != "" || req.body.FilPage != "") {
-      var perPage = Number(req.body.FilPerpage ? req.body.FilPerpage : 0);
-      var page = Number(req.body.FilPage ? req.body.FilPage : 0);
-      var skippage = perPage * page - perPage;
-      Payment.find({ userId: req.userId.toString() })
-        .skip(skippage)
-        .limit(perPage)
-        .sort({ _id: -1 })
-        .exec(function (err, data) {
-          Payment.find({ userId: req.userId.toString() })
-            .countDocuments()
-            .exec(function (err1, count) {
-              if (err) {
-                return res.json({
-                  status: false,
-                  message: "Something went wrong, Please try again later",
-                });
-              } else {
-                var history = [];
-                for (var i = 0; i < data.length; i++) {
-                  var status = "";
-                  if (data[i].paymentStatus == "pending") {
-                    status = "Pending";
-                  } else {
-                    status = "Completed";
-                  }
-                  var txn_id = "";
-                  if (data[i].sessionId != "") {
-                    txn_id = data[i].sessionId;
-                  } else {
-                    txn_id = "--------";
-                  }
-                  var obj = {
-                    amount: data[i].amount,
-                    currency: data[i].currencySymbol,
-                    txn_id: txn_id,
-                    status: status,
-                    created_at: data[i].createdAt,
-                  };
-                  history.push(obj);
-                }
-                var returnJson = {
-                  status: true,
-                  result: history,
-                  current: page,
-                  pages: Math.ceil(count / perPage),
-                };
-                res.json(returnJson);
-              }
-            });
-        });
-    } else {
-      return res
-        .status(400)
-        .json({ status: false, Message: "Please enter pagination fields" });
+    const { FilPerpage, FilPage } = req.body;
+
+    if (!FilPerpage || !FilPage) {
+      return res.status(400).json({
+        status: false,
+        Message: "Please enter pagination fields",
+      });
     }
+
+    const perPage = Number(FilPerpage);
+    const page = Number(FilPage);
+    const skip = (page - 1) * perPage;
+
+    const query = {
+      userId: req.userId.toString(),
+      depType: 1,
+    };
+
+    const historyData = await depositDB
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(perPage);
+
+    const count = await depositDB.countDocuments(query);
+
+    const history = historyData.map((item) => ({
+      amount: item.depamt,
+      currency: item.currencySymbol,
+      txn_id: item.txnid || "--------",
+      status:
+        item.status == 0
+          ? "Pending"
+          : item.status == 1
+            ? "Completed"
+            : item.status == 2
+              ? "Rejected"
+              : "Pending",
+      created_at: item.createddate,
+    }));
+
+    return res.json({
+      status: true,
+      result: history,
+      current: page,
+      pages: Math.ceil(count / perPage),
+    });
   } catch (error) {
-    console.log("withdraw catch===", error);
-    res.json({
+    console.log("payment_history error:", error);
+
+    return res.status(500).json({
       status: false,
       message: "Something went wrong, Please try again later",
     });
@@ -15200,6 +15173,92 @@ router.post("/enableVipUser", common.tokenmiddleware, async (req, res) => {
     return res.json({ status: false, message: "Server error" });
   }
 });
+
+cron.schedule(
+  "0 0 * * *",
+  async () => {
+    try {
+      console.log("Portfolio Snapshot Started");
+
+      const users = await usersDB.find({}, { _id: 1 });
+
+      const today = moment().format("YYYY-MM-DD");
+
+      for (const user of users) {
+        let totalBalanceUSDT = 0;
+
+        const walletData = await userWalletDB.aggregate([
+          {
+            $match: {
+              userId: mongoose.Types.ObjectId(user._id),
+            },
+          },
+          {
+            $unwind: "$wallets",
+          },
+          {
+            $lookup: {
+              from: "currency",
+              localField: "wallets.currencyId",
+              foreignField: "_id",
+              as: "currdetail",
+            },
+          },
+        ]);
+
+        for (const item of walletData) {
+          const symbol = item.currdetail?.[0]?.currencySymbol;
+
+          if (!symbol) continue;
+
+          let usdtPrice = 0;
+
+          const pair = symbol.toLowerCase() + "usdt";
+
+          const redisPrice = await RedisService.hget(
+            "BINANCE-TICKERPRICE",
+            pair,
+          );
+
+          if (redisPrice && redisPrice.lastprice) {
+            usdtPrice = Number(redisPrice.lastprice.lastprice);
+          }
+
+          const balance = Number(item.wallets.amount || 0);
+
+          const hold = Number(item.wallets.holdAmount || 0);
+
+          const p2p = Number(item.wallets.p2p || 0);
+
+          const p2phold = Number(item.wallets.p2phold || 0);
+
+          totalBalanceUSDT += (balance + hold + p2p + p2phold) * usdtPrice;
+        }
+
+        await portfolioHistoryDB.findOneAndUpdate(
+          {
+            userId: user._id,
+            snapshotDate: today,
+          },
+          {
+            totalBalanceUSDT,
+          },
+          {
+            upsert: true,
+            new: true,
+          },
+        );
+      }
+
+      console.log("Portfolio Snapshot Completed");
+    } catch (err) {
+      console.log("Portfolio Snapshot Error", err);
+    }
+  },
+  {
+    timezone: "Asia/Kolkata",
+  },
+);
 
 
 

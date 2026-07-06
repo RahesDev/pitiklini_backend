@@ -1024,7 +1024,7 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
   try {
     const getOrders = await p2pOrdersDB
       .find({ status: { $in: ["active", "partially"] } })
-      .populate("userId", "displayname profile_image location ratings")
+      .populate("userId", "displayname uuid profile_image location ratings")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -1078,6 +1078,7 @@ router.post("/getAllp2pOrderbefore", async (req, res) => {
             firstCurrency: order.firstCurrency,
             secondCurrency: order.secondCurrnecy,
             displayname: order.userId.displayname || "Unknown",
+            uuid: order.userId.uuid || "Unknown",
             price: parseFloat(order.price).toFixed(2),
             fromLimit: order.fromLimit,
             toLimit: order.toLimit,
@@ -3122,55 +3123,74 @@ router.post(
       // }
       
       if (p2pupdate && p2pconfirm) {
-        try {
-          const userDetails = await usersDB.findById(orderDetail.userId);
-
-          if (userDetails) {
+          try {
             const resData = await mailtempDB.findOne({
               key: "P2P_ORDER_CANCELLED",
             });
 
             if (resData) {
-              const receiver = common.decrypt(userDetails.email);
+              const [confirmUser, orderOwner] = await Promise.all([
+                usersDB.findById(orderDetail.userId),
+                usersDB.findById(orderDetail.map_userId),
+              ]);
 
-              const emailBody = resData.body
-                .replace(/###USERNAME###/g, userDetails.uuid)
-                .replace(/###ORDERID###/g, orderDetail.orderId)
-                .replace(/###AMOUNT###/g, orderDetail.askAmount)
-                .replace(/###CURRENCY###/g, p2pdetail.fromCurrency)
-                .replace(
-                  /###DATE###/g,
-                  new Date().toLocaleString("en-IN", {
-                    timeZone: "Asia/Kolkata",
-                  }),
-                );
+              const users = [confirmUser, orderOwner].filter(
+                (user, index, self) =>
+                  user &&
+                  index ===
+                    self.findIndex(
+                      (u) => u._id.toString() === user._id.toString(),
+                    ),
+              );
 
-              await mail.sendMail({
-                from: {
-                  name: process.env.FROM_NAME,
-                  address: process.env.FROM_EMAIL,
-                },
-                to: receiver,
-                subject: resData.Subject,
-                html: emailBody,
-              });
+              for (const user of users) {
+                try {
+                  const receiver = common.decrypt(user.email);
+
+                  const emailBody = resData.body
+                    .replace(/###USERNAME###/g, user.uuid)
+                    .replace(/###ORDERID###/g, orderDetail.orderId)
+                    .replace(/###AMOUNT###/g, orderDetail.askAmount)
+                    .replace(/###CURRENCY###/g, p2pdetail.fromCurrency)
+                    .replace(
+                      /###DATE###/g,
+                      new Date().toLocaleString("en-IN", {
+                        timeZone: "Asia/Kolkata",
+                      }),
+                    );
+
+                  await mail.sendMail({
+                    from: {
+                      name: process.env.FROM_NAME,
+                      address: process.env.FROM_EMAIL,
+                    },
+                    to: receiver,
+                    subject: resData.Subject,
+                    html: emailBody,
+                  });
+                } catch (err) {
+                  console.log(
+                    `P2P Cancel Mail Error for user ${user._id}:`,
+                    err,
+                  );
+                }
+              }
             }
+          } catch (mailError) {
+            console.log("P2P Cancel Mail Error:", mailError);
           }
-        } catch (mailError) {
-          console.log("P2P Cancel Mail Error:", mailError);
-        }
 
-        common.sendCommonSocket(
-          "success",
-          "ordercancel",
-          "ordercancel",
-          () => {},
-        );
+          common.sendCommonSocket(
+            "success",
+            "ordercancel",
+            "ordercancel",
+            () => {},
+          );
 
-        return res.json({
-          status: true,
-          Message: "Timeout Order cancelled, Please try again",
-        });
+          return res.json({
+            status: true,
+            Message: "Timeout Order cancelled, Please try again",
+          });
       } else {
         return res.status(500).json({
           status: false,
@@ -3474,35 +3494,55 @@ router.post(
 
       if (userDetails) {
         try {
-          const resData = await mailtempDB.findOne({
-            key: "P2P_ORDER_CANCELLED",
-          });
+         const resData = await mailtempDB.findOne({
+           key: "P2P_ORDER_CANCELLED",
+         });
 
-          if (resData) {
-            const receiver = common.decrypt(userDetails.email);
+         if (resData) {
+           const [confirmUser, orderOwner] = await Promise.all([
+             usersDB.findById(p2pdet.userId),
+             usersDB.findById(p2pdet.map_userId),
+           ]);
 
-            const emailBody = resData.body
-              .replace(/###USERNAME###/g, userDetails.uuid)
-              .replace(/###ORDERID###/g, p2pdet.orderId)
-              .replace(/###AMOUNT###/g, p2pdet.askAmount)
-              .replace(/###CURRENCY###/g, getOrder.fromCurrency)
-              .replace(
-                /###DATE###/g,
-                new Date().toLocaleString("en-IN", {
-                  timeZone: "Asia/Kolkata",
-                }),
-              );
+           const users = [confirmUser, orderOwner].filter(
+             (user, index, self) =>
+               user &&
+               index ===
+                 self.findIndex(
+                   (u) => u._id.toString() === user._id.toString(),
+                 ),
+           );
 
-            await mail.sendMail({
-              from: {
-                name: process.env.FROM_NAME,
-                address: process.env.FROM_EMAIL,
-              },
-              to: receiver,
-              subject: resData.Subject,
-              html: emailBody,
-            });
-          }
+           for (const user of users) {
+             try {
+               const receiver = common.decrypt(user.email);
+
+               const emailBody = resData.body
+                 .replace(/###USERNAME###/g, user.uuid)
+                 .replace(/###ORDERID###/g, p2pdet.orderId)
+                 .replace(/###AMOUNT###/g, p2pdet.askAmount)
+                 .replace(/###CURRENCY###/g, getOrder.fromCurrency)
+                 .replace(
+                   /###DATE###/g,
+                   new Date().toLocaleString("en-IN", {
+                     timeZone: "Asia/Kolkata",
+                   }),
+                 );
+
+               await mail.sendMail({
+                 from: {
+                   name: process.env.FROM_NAME,
+                   address: process.env.FROM_EMAIL,
+                 },
+                 to: receiver,
+                 subject: resData.Subject,
+                 html: emailBody,
+               });
+             } catch (err) {
+               console.log(`Mail sending failed for user ${user._id}:`, err);
+             }
+           }
+         }
         } catch (mailError) {
           console.log("P2P Cancel Mail Error:", mailError);
         }
