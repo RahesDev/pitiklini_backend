@@ -211,141 +211,252 @@ const getCurrencyConversion = async () => {
 
 router.post("/fetch_price", common.tokenmiddleware, async (req, res) => {
   try {
-    const firstCurrency = req.body.fromCurrency;
-    const secondCurrency = req.body.toCurrency;
+    const { fromCurrency, toCurrency } = req.body;
 
-    // -------------------------
-    // Highest SELL Order Price
-    // -------------------------
-    const sellResult = await p2pOrdersDB.aggregate([
-      {
-        $match: {
-          firstCurrency,
-          secondCurrnecy: secondCurrency,
-          orderType: "sell",
-          status: {
-            $in: ["active", "partially", "filled"],
-          },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          highprice: { $max: "$price" },
-        },
-      },
-    ]);
-
-    // -------------------------
-    // Lowest BUY Order Price
-    // -------------------------
     const buyResult = await p2pOrdersDB.aggregate([
       {
         $match: {
-          firstCurrency,
-          secondCurrnecy: secondCurrency,
+          firstCurrency: fromCurrency,
+          secondCurrnecy: toCurrency,
+          // userId: { $ne: ObjectId(userId) },
           orderType: "buy",
           status: {
-            $in: ["active", "partially", "filled"],
+            $in: ["active", "partially"],
+          },
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $gt: [
+              {
+                $subtract: [
+                  { $toDouble: "$totalAmount" },
+                  { $toDouble: "$processAmount" },
+                ],
+              },
+              0,
+            ],
           },
         },
       },
       {
         $group: {
           _id: null,
-          lowprice: { $min: "$price" },
+          highestBuyPrice: {
+            $max: {
+              $toDouble: "$price",
+            },
+          },
         },
       },
     ]);
 
-    const highestPrice =
-      sellResult.length > 0 ? Number(sellResult[0].highprice) : null;
+    const sellResult = await p2pOrdersDB.aggregate([
+      {
+        $match: {
+          firstCurrency: fromCurrency,
+          secondCurrnecy: toCurrency,
+          orderType: "sell",
+          // userId: { $ne: ObjectId(userId) },
+          status: {
+            $in: ["active", "partially"],
+          },
+        },
+      },
+      {
+        $match: {
+          $expr: {
+            $gt: [
+              {
+                $subtract: [
+                  { $toDouble: "$totalAmount" },
+                  { $toDouble: "$processAmount" },
+                ],
+              },
+              0,
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          lowestSellPrice: {
+            $min: {
+              $toDouble: "$price",
+            },
+          },
+        },
+      },
+    ]);
 
-    const lowestPrice =
-      buyResult.length > 0 ? Number(buyResult[0].lowprice) : null;
-
-    let finalPrice = 0;
-
-    // =====================================================
-    // Use P2P Market Price
-    // =====================================================
-    if (highestPrice !== null && lowestPrice !== null) {
-      finalPrice = Number(((highestPrice + lowestPrice) / 2).toFixed(2));
-    } else {
-      // =====================================================
-      // Fallback to Currency Conversion
-      // =====================================================
-      const allPairs = await getCurrencyConversion();
-
-      if (
-        allPairs &&
-        allPairs[firstCurrency] &&
-        allPairs[firstCurrency][secondCurrency]
-      ) {
-        finalPrice = Number(
-          parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
-        );
-      } else {
-        finalPrice = 0;
-      }
-    }
+    // console.log("buyResult-->", buyResult);
+    // console.log("sellResult-->", sellResult);
 
     return res.json({
       status: true,
       data: {
-        firstCurrency,
-        secondCurrency,
-        highprice: highestPrice ?? "",
-        lowprice: lowestPrice ?? "",
-        price: finalPrice,
+        highestBuyPrice: buyResult.length
+          ? Number(buyResult[0].highestBuyPrice)
+          : 0,
+
+        lowestSellPrice: sellResult.length
+          ? Number(sellResult[0].lowestSellPrice)
+          : 0,
       },
     });
-  } catch (error) {
-    console.log("fetch_price error:", error);
+  } catch (err) {
+    console.log(err);
 
-    // ============================
-    // If anything unexpected fails,
-    // still try currency conversion
-    // ============================
-
-    try {
-      const firstCurrency = req.body.fromCurrency;
-      const secondCurrency = req.body.toCurrency;
-
-      const allPairs = await getCurrencyConversion();
-
-      let price = 0;
-
-      if (
-        allPairs &&
-        allPairs[firstCurrency] &&
-        allPairs[firstCurrency][secondCurrency]
-      ) {
-        price = Number(
-          parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
-        );
-      }
-
-      return res.json({
-        status: true,
-        data: {
-          firstCurrency,
-          secondCurrency,
-          highprice: "",
-          lowprice: "",
-          price,
-        },
-      });
-    } catch (err) {
-      console.log("Currency conversion fallback failed:", err);
-
-      return res.json({
-        status: false,
-        message: err.message,
-      });
-    }
+    return res.json({
+      status: false,
+      data: {
+        highestBuyPrice: 0,
+        lowestSellPrice: 0,
+      },
+    });
   }
 });
+
+// -->last one fetch price
+// router.post("/fetch_price", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const firstCurrency = req.body.fromCurrency;
+//     const secondCurrency = req.body.toCurrency;
+
+//     // -------------------------
+//     // Highest SELL Order Price
+//     // -------------------------
+//     const sellResult = await p2pOrdersDB.aggregate([
+//       {
+//         $match: {
+//           firstCurrency,
+//           secondCurrnecy: secondCurrency,
+//           orderType: "sell",
+//           status: {
+//             $in: ["active", "partially", "filled"],
+//           },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: null,
+//           highprice: { $max: "$price" },
+//         },
+//       },
+//     ]);
+
+//     // -------------------------
+//     // Lowest BUY Order Price
+//     // -------------------------
+//     const buyResult = await p2pOrdersDB.aggregate([
+//       {
+//         $match: {
+//           firstCurrency,
+//           secondCurrnecy: secondCurrency,
+//           orderType: "buy",
+//           status: {
+//             $in: ["active", "partially", "filled"],
+//           },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: null,
+//           lowprice: { $min: "$price" },
+//         },
+//       },
+//     ]);
+
+//     const highestPrice =
+//       sellResult.length > 0 ? Number(sellResult[0].highprice) : null;
+
+//     const lowestPrice =
+//       buyResult.length > 0 ? Number(buyResult[0].lowprice) : null;
+
+//     let finalPrice = 0;
+
+//     // =====================================================
+//     // Use P2P Market Price
+//     // =====================================================
+//     if (highestPrice !== null && lowestPrice !== null) {
+//       finalPrice = Number(((highestPrice + lowestPrice) / 2).toFixed(2));
+//     } else {
+//       // =====================================================
+//       // Fallback to Currency Conversion
+//       // =====================================================
+//       const allPairs = await getCurrencyConversion();
+
+//       if (
+//         allPairs &&
+//         allPairs[firstCurrency] &&
+//         allPairs[firstCurrency][secondCurrency]
+//       ) {
+//         finalPrice = Number(
+//           parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
+//         );
+//       } else {
+//         finalPrice = 0;
+//       }
+//     }
+
+//     return res.json({
+//       status: true,
+//       data: {
+//         firstCurrency,
+//         secondCurrency,
+//         highprice: highestPrice ?? "",
+//         lowprice: lowestPrice ?? "",
+//         price: finalPrice,
+//       },
+//     });
+//   } catch (error) {
+//     console.log("fetch_price error:", error);
+
+//     // ============================
+//     // If anything unexpected fails,
+//     // still try currency conversion
+//     // ============================
+
+//     try {
+//       const firstCurrency = req.body.fromCurrency;
+//       const secondCurrency = req.body.toCurrency;
+
+//       const allPairs = await getCurrencyConversion();
+
+//       let price = 0;
+
+//       if (
+//         allPairs &&
+//         allPairs[firstCurrency] &&
+//         allPairs[firstCurrency][secondCurrency]
+//       ) {
+//         price = Number(
+//           parseFloat(allPairs[firstCurrency][secondCurrency]).toFixed(2),
+//         );
+//       }
+
+//       return res.json({
+//         status: true,
+//         data: {
+//           firstCurrency,
+//           secondCurrency,
+//           highprice: "",
+//           lowprice: "",
+//           price,
+//         },
+//       });
+//     } catch (err) {
+//       console.log("Currency conversion fallback failed:", err);
+
+//       return res.json({
+//         status: false,
+//         message: err.message,
+//       });
+//     }
+//   }
+// });
 
 router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
   try {
@@ -3128,11 +3239,17 @@ router.post(
               key: "P2P_ORDER_CANCELLED",
             });
 
+            // console.log("Confirm User:", orderDetail.userId);
+            // console.log("Order Owner:", orderDetail.map_userId);
+
             if (resData) {
               const [confirmUser, orderOwner] = await Promise.all([
                 usersDB.findById(orderDetail.userId),
                 usersDB.findById(orderDetail.map_userId),
               ]);
+
+              // console.log(confirmUser);
+              // console.log(orderOwner);
 
               const users = [confirmUser, orderOwner].filter(
                 (user, index, self) =>
@@ -3143,15 +3260,24 @@ router.post(
                     ),
               );
 
+              // console.log(
+              //   users.map((u) => ({
+              //     id: u._id.toString(),
+              //     email: common.decrypt(u.email),
+              //     uuid: u.uuid,
+              //   })),
+              // );
+
               for (const user of users) {
                 try {
                   const receiver = common.decrypt(user.email);
+                  //  console.log("Sending mail to:", receiver);
 
                   const emailBody = resData.body
                     .replace(/###USERNAME###/g, user.uuid)
                     .replace(/###ORDERID###/g, orderDetail.orderId)
                     .replace(/###AMOUNT###/g, orderDetail.askAmount)
-                    .replace(/###CURRENCY###/g, p2pdetail.fromCurrency)
+                    .replace(/###CURRENCY###/g, p2pdetail.firstCurrency)
                     .replace(
                       /###DATE###/g,
                       new Date().toLocaleString("en-IN", {
@@ -3168,6 +3294,7 @@ router.post(
                     subject: resData.Subject,
                     html: emailBody,
                   });
+                   console.log("Mail sent:", receiver);
                 } catch (err) {
                   console.log(
                     `P2P Cancel Mail Error for user ${user._id}:`,
@@ -3497,12 +3624,18 @@ router.post(
          const resData = await mailtempDB.findOne({
            key: "P2P_ORDER_CANCELLED",
          });
+          
+          // console.log("Confirm User:", p2pdet.userId);
+          // console.log("Order Owner:", p2pdet.map_userId);
 
          if (resData) {
            const [confirmUser, orderOwner] = await Promise.all([
              usersDB.findById(p2pdet.userId),
              usersDB.findById(p2pdet.map_userId),
            ]);
+
+          //  console.log(confirmUser);
+          //  console.log(orderOwner);
 
            const users = [confirmUser, orderOwner].filter(
              (user, index, self) =>
@@ -3513,15 +3646,24 @@ router.post(
                  ),
            );
 
+          //  console.log(
+          //    users.map((u) => ({
+          //      id: u._id.toString(),
+          //      email: common.decrypt(u.email),
+          //      uuid: u.uuid,
+          //    })),
+          //  );
+
            for (const user of users) {
              try {
                const receiver = common.decrypt(user.email);
+                // console.log("Sending mail to:", receiver);
 
                const emailBody = resData.body
                  .replace(/###USERNAME###/g, user.uuid)
                  .replace(/###ORDERID###/g, p2pdet.orderId)
                  .replace(/###AMOUNT###/g, p2pdet.askAmount)
-                 .replace(/###CURRENCY###/g, getOrder.fromCurrency)
+                 .replace(/###CURRENCY###/g, getOrder.firstCurrency)
                  .replace(
                    /###DATE###/g,
                    new Date().toLocaleString("en-IN", {
@@ -3538,6 +3680,7 @@ router.post(
                  subject: resData.Subject,
                  html: emailBody,
                });
+                console.log("Mail sent:", receiver);
              } catch (err) {
                console.log(`Mail sending failed for user ${user._id}:`, err);
              }

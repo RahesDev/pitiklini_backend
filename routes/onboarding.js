@@ -401,8 +401,11 @@ router.post('/login', common.isEmpty, async (req, res) => {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,
                   location: geo !== null ? geo.country : "not found", activitity: findUser.tfastatus == 0 ? "Login" : "TFARedirection", createdDate: new Date(), modifiedDate: new Date(),
                 };
-                let createSession = await userLoginhistoryDB.create(obj2);
-                if (createSession) {
+                  // let createSession = await userLoginhistoryDB.create(obj2);
+                  if (findUser.tfastatus == 0) {
+                    await userLoginhistoryDB.create(obj2);
+                  }
+                // if (createSession) {
                   var objNotify = {
                     to_user_id: ObjectId(findUser._id),
                     to_user_name: findUser.displayname,
@@ -441,9 +444,9 @@ router.post('/login', common.isEmpty, async (req, res) => {
                       return res.json({ status : false, Message : {} });
                     }
                   });
-                } else {
-                  return res.json({ status: false, Message: "Oops!, Please try again later" });
-                }
+                // } else {
+                //   return res.json({ status: false, Message: "Oops!, Please try again later" });
+                // }
                 } else {
                   return res.json({
                     Message: "Oops! We couldn’t send the email at this time. Please try again later ",
@@ -454,8 +457,11 @@ router.post('/login', common.isEmpty, async (req, res) => {
                   ipAddress: ip_address, browser: ua.browser, OS: ua.os, platform: ua.platform, useremail: common.encrypt(req.body.email), user_id: findUser._id,
                   location: geo !== null ? geo.country : "not found", activitity: findUser.tfastatus == 0 ? "Login" : "TFARedirection", createdDate: new Date(), modifiedDate: new Date(),
                 };
-                let createSession = await userLoginhistoryDB.create(obj2);
-                if (createSession) {
+                // let createSession = await userLoginhistoryDB.create(obj2);
+                if (findUser.tfastatus == 0) {
+                  await userLoginhistoryDB.create(obj2);
+                }
+                // if (createSession) {
                   var objNotify = {
                     to_user_id: ObjectId(findUser._id),
                     to_user_name: findUser.displayname,
@@ -494,9 +500,9 @@ router.post('/login', common.isEmpty, async (req, res) => {
                       return res.json({ status : false, Message : {} });
                     }
                   });
-                } else {
-                  return res.json({ status: false, Message: "Oops!, Please try again later" });
-                }
+                // } else {
+                //   return res.json({ status: false, Message: "Oops!, Please try again later" });
+                // }
               }
             }
           }
