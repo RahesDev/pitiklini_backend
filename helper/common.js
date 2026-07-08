@@ -6989,8 +6989,22 @@ exports.currency_conversion = async function (callback) {
 
     // Step 2: Fetch prices from CryptoCompare
     let result = await fetchCryptoComparePrices(fiat_from, fiat_to);
-    if (!result) {
-      callback({ status: false, message: "Failed to fetch prices from CryptoCompare" });
+    if (!result || result.Response === "Error") {
+      const oldPairs = await client.hget("CurrencyConversion", "allpair");
+
+      if (oldPairs) {
+        console.log("Using cached Redis conversion.");
+
+        return callback({
+          status: true,
+          message: JSON.parse(oldPairs),
+        });
+      }
+
+      callback({
+        status: false,
+        message: "Failed to fetch prices from CryptoCompare",
+      });
       return;
     }
 
