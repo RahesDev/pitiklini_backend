@@ -13790,16 +13790,17 @@ router.post(
       //   `&amount=${amount}` +
       //   `&redirect_url=${redirectUrl}`;
       const widgetUrl =
-        `https://widget.depa.finance/?partner=Pitiklini` +
+        `https://widget.depa.finance/emb?partner=Pitiklini` +
         `&scenario=direct_bank_payment` +
         `&identification_id=${user.depasifyExternalUuid}` +
         `&amount=${amount}` +
-        `&name=${encodeURIComponent(user.fullName)}` +
-        `&surname=${encodeURIComponent(user.lastname)}` +
-        `&address=${encodeURIComponent(user.Address1)}` +
-        `&postal_code=${encodeURIComponent(user.PostalCode)}` +
-        `&city=${encodeURIComponent(user.city)}` +
-        `&country_code=${encodeURIComponent(user.CountryCode)}` +
+        `&continuebutton=False` +
+        // `&name=${encodeURIComponent(user.fullName)}` +
+        // `&surname=${encodeURIComponent(user.lastname)}` +
+        // `&address=${encodeURIComponent(user.Address1)}` +
+        // `&postal_code=${encodeURIComponent(user.PostalCode)}` +
+        // `&city=${encodeURIComponent(user.city)}` +
+        // `&country_code=${encodeURIComponent(user.CountryCode)}` +
         `&redirect_url=${redirectUrl}`;
       
         // `&continuebutton=False` +
@@ -15176,6 +15177,7 @@ router.post("/enableVipUser", common.tokenmiddleware, async (req, res) => {
 
 cron.schedule(
   "0 0 * * *",
+  // "* * * * *",
   async () => {
     try {
       console.log("Portfolio Snapshot Started");
@@ -15235,6 +15237,8 @@ cron.schedule(
           totalBalanceUSDT += (balance + hold + p2p + p2phold) * usdtPrice;
         }
 
+        // console.log("Portfolio datas:--", today, totalBalanceUSDT);
+
         await portfolioHistoryDB.findOneAndUpdate(
           {
             userId: user._id,
@@ -15251,6 +15255,9 @@ cron.schedule(
       }
 
       console.log("Portfolio Snapshot Completed");
+
+
+      // console.log("Portfolio Snapshot running doi..");
     } catch (err) {
       console.log("Portfolio Snapshot Error", err);
     }
