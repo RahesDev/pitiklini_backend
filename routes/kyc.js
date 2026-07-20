@@ -657,7 +657,7 @@ router.post(
         //   `&redirect_url=${redirectUrl}`;
 
         widgetUrl =
-          `https://widget.depa.finance/?partner=Pitiklini` +
+          `https://widget.depa.finance/emb?partner=Pitiklini` +
           `&scenario=kyc_only` +
           `&identification_id=${user.depasifyIdentificationId}` +
           `&redirect_url=${redirectUrl}`;
@@ -670,7 +670,7 @@ router.post(
         //   `&external_user_uuid=${user._id}` +
         //   `&redirect_url=${redirectUrl}`;
         widgetUrl =
-          `https://widget.depa.finance/?partner=Pitiklini` +
+          `https://widget.depa.finance/emb?partner=Pitiklini` +
           `&scenario=kyc_only` +
           `&identification_id=${user.depasifyExternalUuid}` +
           `&redirect_url=${redirectUrl}`;
