@@ -1866,11 +1866,69 @@ router.post("/tradepair/viewall", common.tokenmiddleware, (req, res) => {
   }
 });
 
+// router.post("/userbalance", common.tokenmiddleware, (req, res) => {
+//   var userid = req.body.userId;
+//   userWalletDB
+//     .aggregate([
+//       { $unwind: "$wallets" },
+//       {
+//         $lookup: {
+//           from: "currency",
+//           localField: "wallets.currencyId",
+//           foreignField: "_id",
+//           as: "currency",
+//         },
+//       },
+//       {
+//         $match: { userId: mongoose.Types.ObjectId(userid) },
+//       },
+//       {
+//         $project: {
+//           currencyname: "$currency.currencySymbol",
+//           balance: "$wallets.amount",
+//           image: "$currency.Currency_image",
+//         },
+//       },
+//     ])
+//     .exec((err, data) => {
+//       if (err) {
+//         res.json({
+//           status: false,
+//           Message: "Something Went Wrong. Please Try Again later",
+//         });
+//       } else {
+//         var balancedata = [];
+//         for (var i = 0; i < data.length; i++) {
+//           if (data[i].image.length != 0) {
+//             var obj = {
+//               currencyname: data[i].currencyname,
+//               balance: parseFloat(data[i].balance).toFixed(8),
+//               image: data[i].image,
+//             };
+//             balancedata.push(obj);
+//           }
+//         }
+//         res.json({
+//           status: true,
+//           Message: balancedata,
+//         });
+//       }
+//     });
+// });
+
 router.post("/userbalance", common.tokenmiddleware, (req, res) => {
   var userid = req.body.userId;
+
   userWalletDB
     .aggregate([
-      { $unwind: "$wallets" },
+      {
+        $match: {
+          userId: mongoose.Types.ObjectId(userid),
+        },
+      },
+      {
+        $unwind: "$wallets",
+      },
       {
         $lookup: {
           from: "currency",
@@ -1880,7 +1938,13 @@ router.post("/userbalance", common.tokenmiddleware, (req, res) => {
         },
       },
       {
-        $match: { userId: mongoose.Types.ObjectId(userid) },
+        $unwind: "$currency",
+      },
+      {
+        $match: {
+          "currency.depositStatus": "Active",
+          "currency.withdrawStatus": "Active",
+        },
       },
       {
         $project: {
@@ -1892,82 +1956,170 @@ router.post("/userbalance", common.tokenmiddleware, (req, res) => {
     ])
     .exec((err, data) => {
       if (err) {
-        res.json({
+        return res.json({
           status: false,
           Message: "Something Went Wrong. Please Try Again later",
         });
-      } else {
-        var balancedata = [];
-        for (var i = 0; i < data.length; i++) {
-          if (data[i].image.length != 0) {
-            var obj = {
-              currencyname: data[i].currencyname,
-              balance: parseFloat(data[i].balance).toFixed(8),
-              image: data[i].image,
-            };
-            balancedata.push(obj);
-          }
-        }
-        res.json({
-          status: true,
-          Message: balancedata,
-        });
       }
+
+      let balancedata = [];
+
+      data.forEach((item) => {
+        if (item.image) {
+          balancedata.push({
+            currencyname: item.currencyname,
+            balance: parseFloat(item.balance).toFixed(8),
+            image: item.image,
+          });
+        }
+      });
+
+      res.json({
+        status: true,
+        Message: balancedata,
+      });
     });
 });
 
-router.post("/useraddress", common.tokenmiddleware, (req, res) => {
-  var userid = req.body.userId;
+// router.post("/useraddress", common.tokenmiddleware, (req, res) => {
+//   var userid = req.body.userId;
 
-  cryptoAddressDB
-    .aggregate([
+//   cryptoAddressDB
+//     .aggregate([
+//       {
+//         $match: { user_id: mongoose.Types.ObjectId(userid) },
+//       },
+//       {
+//         $lookup: {
+//           from: "currency",
+//           localField: "currency",
+//           foreignField: "_id",
+//           as: "currency",
+//         },
+//       },
+//       { $unwind: "$currency" },
+//       {
+//         $project: {
+//           currencyname: "$currency.currencySymbol",
+//           address: 1,
+//           image: "$currency.Currency_image",
+//         },
+//       },
+//     ])
+//     .exec((err, data) => {
+//       console.log("addres data", data);
+//       if (err) {
+//         res.json({
+//           status: false,
+//           Message: "Something Went Wrong. Please Try Again later",
+//         });
+//       } else {
+//         var eth_wallets = [];
+//         //console.log((data.length, "data.length");
+//         for (var j = 0; j < data.length; j++) {
+//           if (data[j].currencyname == "ETH") {
+//             var obj = {
+//               address: data[j].address,
+//               image: data[j].image,
+//               currency: data[j].currencyname,
+//             };
+//             eth_wallets.push(obj);
+//           }
+//         }
+//         res.json({
+//           status: true,
+//           Message: data,
+//           eth_wallets: eth_wallets,
+//         });
+//       }
+//     });
+// });
+
+router.post("/useraddress", common.tokenmiddleware, async (req, res) => {
+  try {
+    const userid = req.body.userId;
+
+    const user = await usersDB.findById(userid, {
+      depasifyWallets: 1,
+    });
+
+    if (!user) {
+      return res.json({
+        status: false,
+        Message: "User not found",
+      });
+    }
+
+    const wallets = user.depasifyWallets || {};
+
+    // Fetch only active currencies
+    const currencies = await currencyDB.find(
       {
-        $match: { user_id: mongoose.Types.ObjectId(userid) },
+        depositStatus: "Active",
+        withdrawStatus: "Active",
       },
       {
-        $lookup: {
-          from: "currency",
-          localField: "currency",
-          foreignField: "_id",
-          as: "currency",
-        },
+        currencySymbol: 1,
+        Currency_image: 1,
       },
-      { $unwind: "$currency" },
-      {
-        $project: {
-          currencyname: "$currency.currencySymbol",
-          address: 1,
-          image: "$currency.Currency_image",
-        },
-      },
-    ])
-    .exec((err, data) => {
-      console.log("addres data", data);
-      if (err) {
-        res.json({
-          status: false,
-          Message: "Something Went Wrong. Please Try Again later",
-        });
-      } else {
-        var eth_wallets = [];
-        //console.log((data.length, "data.length");
-        for (var j = 0; j < data.length; j++) {
-          if (data[j].currencyname == "ETH") {
-            var obj = {
-              address: data[j].address,
-              image: data[j].image,
-              currency: data[j].currencyname,
-            };
-            eth_wallets.push(obj);
-          }
+    );
+
+    const data = [];
+    const eth_wallets = [];
+
+    currencies.forEach((currency) => {
+      let wallet = null;
+
+      switch (currency.currencySymbol) {
+        case "BTC":
+          wallet = wallets.BITCOIN;
+          break;
+
+        case "ETH":
+          wallet = wallets.ETHEREUM;
+          break;
+
+        case "BNB":
+          wallet = wallets.BSC;
+          break;
+
+        case "TRX":
+          wallet = wallets.TRON;
+          break;
+      }
+
+      if (wallet && wallet.address) {
+        const obj = {
+          currencyname: currency.currencySymbol,
+          address: wallet.address,
+          image: currency.Currency_image,
+        };
+
+        data.push(obj);
+
+        if (currency.currencySymbol === "ETH") {
+          eth_wallets.push({
+            address: wallet.address,
+            image: currency.Currency_image,
+            currency: currency.currencySymbol,
+          });
         }
-        res.json({
-          status: true,
-          Message: data,
-          eth_wallets: eth_wallets,
-        });
       }
     });
+
+    return res.json({
+      status: true,
+      Message: data,
+      eth_wallets,
+    });
+  } catch (err) {
+    console.log(err);
+
+    return res.json({
+      status: false,
+      Message: "Something Went Wrong. Please Try Again later",
+    });
+  }
 });
 
 router.post("/support_category_list", common.tokenmiddleware, async (req, res) => {
