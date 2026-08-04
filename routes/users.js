@@ -14653,10 +14653,11 @@ router.post("/do_recharge", common.tokenmiddleware, async (req, res) => {
       apikey: process.env.INNOVERIT_KEY,
       id_product: planId,
       destination: number,
-      // key: userId, 
       key: `RECHARGE_${userId}_${Date.now()}`,
       note: `Recharge for ${number}`,
     };
+
+    // key: userId, 
 
     console.log("Sending Topup Payload:", payload);
     // return;
