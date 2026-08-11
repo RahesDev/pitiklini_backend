@@ -470,7 +470,8 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
       preferredPayment,
       paymentTime,
       orderType,
-      fromcurrency,
+      // fromcurrency,
+      firstCurrency,
       requirements
     } = req.body;
 
@@ -544,6 +545,42 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
     //   }
     // }
 
+    const currencyData = await currencyDB.findOne(
+      {
+        currencySymbol: firstCurrency,
+      },
+      {
+        _id: 1,
+        currencySymbol: 1,
+      },
+    );
+
+    if (!currencyData) {
+      return res.json({
+        status: false,
+        Message: "Invalid cryptocurrency",
+        bank: false,
+      });
+    }
+
+    const fiatCurrencyData = await currencyDB.findOne(
+  {
+    currencySymbol: fiatCurrency,
+  },
+  {
+    _id: 1,
+    currencySymbol: 1,
+  }
+);
+
+if (!fiatCurrencyData) {
+  return res.json({
+    status: false,
+    Message: "Invalid fiat currency",
+    bank: false,
+  });
+}
+
     const userDetail = await usersDB.findOne(
       { _id: req.userId },
       { email: 1, displayname: 1 }
@@ -562,18 +599,18 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
       paymentMethod: preferredPayment,
       status: "active",
       orderId: uid.randomUUID(6).toLowerCase(),
-      fromCurrency: fromcurrency,
-      toCurrency: req.body.tocurrency,
+      fromCurrency: currencyData._id,
+      toCurrency: fiatCurrencyData._id,
       filledAmount: quantity,
       pay_time: paymentTime,
       available_qty: quantity,
-      requirements: requirements
+      requirements: requirements,
     };
 
     if (orderType === "sell") {
       const userBalance = await common.getUserP2PBalance(
         req.userId,
-        fromcurrency
+        currencyData._id,
       );
       if (userBalance && userBalance.totalBalance >= quantity) {
         const updateAmount = Math.max(userBalance.totalBalance - quantity, 0);
@@ -586,11 +623,11 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
         if (savedOrder) {
           const balanceUpdate = await common.updateUserP2PBalances(
             req.userId,
-            fromcurrency,
+            currencyData._id,
             updateAmount,
             userBalance.totalBalance,
             savedOrder._id,
-            "sell"
+            "sell",
           );
           if (balanceUpdate && balanceUpdate.nModified === 1) {
             // await common.updateHoldAmount(
@@ -600,8 +637,8 @@ router.post("/postAddOrder", common.tokenmiddleware, async (req, res) => {
             // );
             await common.updatep2pHoldAmount(
               req.userId,
-              fromcurrency,
-              updateHoldAmount
+              currencyData._id,
+              updateHoldAmount,
             );
             return res.json({
               status: true,
