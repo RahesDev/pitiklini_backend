@@ -3413,47 +3413,238 @@ router.post("/myOrders", common.tokenmiddleware, async (req, res) => {
   }
 });
 
+// router.post("/p2p_history", common.tokenmiddleware, async (req, res) => {
+//   try {
+//     const { page = 1, limit = 5 } = req.body;
+//     const skip = (page - 1) * limit;
+
+//     const getOrders = await p2pconfirmOrder
+//       .find({ $or: [{ map_userId: req.userId }, { userId: req.userId }] })
+//       .populate("firstCurrency", "currencyName currencySymbol Currency_image")
+//       .skip(skip)
+//       .limit(limit)
+//       .sort({ _id: -1 })
+//       .exec();
+
+//     if (getOrders.length > 0) {
+//       getOrders.forEach((order) => {
+//         order.type =
+//           order.type === "buy" && order.userId !== req.userId ? "sell" : "buy";
+//       });
+//     }
+
+//     const count = await p2pconfirmOrder
+//       .countDocuments({
+//         $or: [{ map_userId: req.userId }, { userId: req.userId }],
+//       })
+//       .exec();
+
+//     const returnObj = {
+//       Message: getOrders,
+//       current: page,
+//       total: count,
+//     };
+
+//     return res.json({ status: true, returnObj });
+//   } catch (error) {
+//     console.error("Error in p2p_history:", error);
+//     return res
+//       .status(500)
+//       .json({
+//         status: false,
+//         Message: "Internal server error, Please try later!",
+//       });
+//   }
+// });
+
 router.post("/p2p_history", common.tokenmiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 5 } = req.body;
+
     const skip = (page - 1) * limit;
 
-    const getOrders = await p2pconfirmOrder
-      .find({ $or: [{ map_userId: req.userId }, { userId: req.userId }] })
-      .populate("firstCurrency", "currencyName currencySymbol Currency_image")
-      .skip(skip)
-      .limit(limit)
-      .sort({ _id: -1 })
-      .exec();
+    const getOrders = await p2pconfirmOrder.aggregate([
+      {
+        $match: {
+          $or: [
+            { map_userId: mongoose.Types.ObjectId(req.userId) },
+            { userId: mongoose.Types.ObjectId(req.userId) },
+          ],
+        },
+      },
 
-    if (getOrders.length > 0) {
-      getOrders.forEach((order) => {
-        order.type =
-          order.type === "buy" && order.userId !== req.userId ? "sell" : "buy";
-      });
+      {
+        $lookup: {
+          from: "p2porders",
+          localField: "map_orderId",
+          foreignField: "orderId",
+          as: "p2pOrder",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$p2pOrder",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      {
+        $lookup: {
+          from: "currency",
+          localField: "firstCurrency",
+          foreignField: "_id",
+          as: "currency",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$currency",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      {
+        $sort: {
+          _id: -1,
+        },
+      },
+
+      {
+        $skip: skip,
+      },
+
+      {
+        $limit: Number(limit),
+      },
+    ]);
+
+    const now = new Date();
+
+    for (const order of getOrders) {
+      // Calculate payment deadline
+      let isActionable = false;
+      let isExpired = false;
+
+      // if (order.status === 0 && order.p2pOrder && order.p2pOrder.pay_time) {
+      //   const payTime = order.p2pOrder.pay_time;
+
+      //   let minutes = 0;
+
+      //   const match = payTime.match(/(\d+)/);
+
+      //   if (match) {
+      //     minutes = Number(match[1]);
+      //   }
+
+      //   const confirmedAt = new Date(order.createdAt);
+
+      //   const paymentDeadline = new Date(
+      //     confirmedAt.getTime() + minutes * 60 * 1000,
+      //   );
+
+      //   if (now <= paymentDeadline) {
+      //     isActionable = true;
+      //   } else {
+      //     isExpired = true;
+
+      //      await p2pconfirmOrder.updateOne(
+      //        {
+      //          _id: order._id,
+      //          status: 0,
+      //        },
+      //        {
+      //          $set: {
+      //            status: 3,
+      //            updatedAt: new Date(),
+      //          },
+      //        },
+      //      );
+
+      //      // Update current object also
+      //      order.status = 3;
+      //   }
+
+      //   order.paymentDeadline = paymentDeadline;
+      // }
+
+      if (order.status === 0) {
+        if (order.p2pOrder && order.p2pOrder.pay_time) {
+          const match = order.p2pOrder.pay_time.match(/(\d+)/);
+
+          if (match) {
+            const minutes = Number(match[1]);
+
+            const confirmedAt = new Date(order.createdAt);
+
+            const paymentDeadline = new Date(
+              confirmedAt.getTime() + minutes * 60 * 1000,
+            );
+
+            order.paymentDeadline = paymentDeadline;
+
+            if (now <= paymentDeadline) {
+              isActionable = true;
+            } else {
+              isExpired = true;
+
+              await p2pconfirmOrder.updateOne(
+                {
+                  _id: order._id,
+                  status: 0,
+                },
+                {
+                  $set: {
+                    status: 3,
+                    updatedAt: new Date(),
+                  },
+                },
+              );
+
+              order.status = 3;
+            }
+          }
+        }
+      } else if (order.status === 1) {
+        // Paid -> still active
+        isActionable = true;
+      }
+
+      // Existing type logic
+      order.displayType =
+        order.type === "buy" &&
+        order.userId.toString() !== req.userId.toString()
+          ? "sell"
+          : "buy";
+
+      // Final action status
+      order.isActionable = isActionable;
+      order.isExpired = isExpired;
+
+      // Currency format expected by frontend
+      order.firstCurrency = order.currency;
     }
 
-    const count = await p2pconfirmOrder
-      .countDocuments({
-        $or: [{ map_userId: req.userId }, { userId: req.userId }],
-      })
-      .exec();
+    const count = await p2pconfirmOrder.countDocuments({
+      $or: [{ map_userId: req.userId }, { userId: req.userId }],
+    });
 
-    const returnObj = {
-      Message: getOrders,
-      current: page,
-      total: count,
-    };
-
-    return res.json({ status: true, returnObj });
+    return res.json({
+      status: true,
+      returnObj: {
+        Message: getOrders,
+        current: page,
+        total: count,
+      },
+    });
   } catch (error) {
     console.error("Error in p2p_history:", error);
-    return res
-      .status(500)
-      .json({
-        status: false,
-        Message: "Internal server error, Please try later!",
-      });
+
+    return res.status(500).json({
+      status: false,
+      Message: "Internal server error, Please try later!",
+    });
   }
 });
 
