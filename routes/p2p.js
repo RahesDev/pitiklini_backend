@@ -3622,7 +3622,6 @@ router.post("/p2p_history", common.tokenmiddleware, async (req, res) => {
       order.isActionable = isActionable;
       order.isExpired = isExpired;
 
-      // Currency format expected by frontend
       order.firstCurrency = order.currency;
     }
 
@@ -3796,8 +3795,6 @@ router.post(
     }
   }
 );
-
-
 
 router.post(
   "/cancel_confirmorder_sell",
