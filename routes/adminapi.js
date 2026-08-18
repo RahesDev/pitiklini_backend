@@ -2645,7 +2645,7 @@ router.post("/support_save", common.tokenmiddleware, (req, res) => {
 
                     var etempdataDynamic = etempdata.body
                       .replace(/###MESSAGE###/g, message)
-                      .replace(/###USERNAME###/g, userdata.username)
+                      .replace(/###USERNAME###/g, userdata.displayname)
                       .replace(
                         /###IMAGE###/,
                         req.body.image ? req.body.image : ""
