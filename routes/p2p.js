@@ -601,7 +601,8 @@ if (!fiatCurrencyData) {
       orderId: uid.randomUUID(6).toLowerCase(),
       fromCurrency: currencyData._id,
       toCurrency: fiatCurrencyData._id,
-      filledAmount: quantity,
+      // filledAmount: quantity,
+      filledAmount: 0,
       pay_time: paymentTime,
       available_qty: quantity,
       requirements: requirements,
@@ -3410,6 +3411,176 @@ router.post("/myOrders", common.tokenmiddleware, async (req, res) => {
         status: false,
         Message: "Internal server error, Please try later!",
       });
+  }
+});
+
+router.post("/updateP2pOrder", common.tokenmiddleware, async (req, res) => {
+  try {
+    const { orderId, totalAmount, price, fromLimit, toLimit } = req.body;
+
+    const userId = req.userId;
+    console.log("userId ---->>>>>>>", userId);
+
+    // Validate required fields
+    if (
+      !orderId ||
+      totalAmount === undefined ||
+      price === undefined ||
+      fromLimit === undefined ||
+      toLimit === undefined
+    ) {
+      return res.json({
+        status: false,
+        Message: "Required fields are missing",
+      });
+    }
+
+    // Validate numbers
+    const quantity = Number(totalAmount);
+    const orderPrice = Number(price);
+    const minLimit = Number(fromLimit);
+    const maxLimit = Number(toLimit);
+
+    if (
+      !Number.isFinite(quantity) ||
+      quantity <= 0 ||
+      !Number.isFinite(orderPrice) ||
+      orderPrice <= 0 ||
+      !Number.isFinite(minLimit) ||
+      minLimit <= 0 ||
+      !Number.isFinite(maxLimit) ||
+      maxLimit <= 0
+    ) {
+      return res.json({
+        status: false,
+        Message: "Invalid order values",
+      });
+    }
+
+    if (minLimit > maxLimit) {
+      return res.json({
+        status: false,
+        Message: "Minimum quantity cannot be greater than maximum quantity",
+      });
+    }
+
+    if (maxLimit > quantity) {
+      return res.json({
+        status: false,
+        Message: "Maximum quantity cannot be greater than total quantity",
+      });
+    }
+
+    // IMPORTANT:
+    // Search by BOTH orderId AND userId
+    const order = await p2pOrdersDB.findOne({
+      orderId: orderId,
+      userId: mongoose.Types.ObjectId(userId),
+    });
+
+    if (!order) {
+      return res.json({
+        status: false,
+        Message: "Order not found",
+      });
+    }
+
+    // Only active orders can be edited
+    if (order.status !== "active") {
+      return res.json({
+        status: false,
+        Message: "Only active orders can be edited",
+      });
+    }
+
+    // Update allowed fields only
+    order.totalAmount = quantity;
+    order.price = orderPrice;
+    order.fromLimit = minLimit;
+    order.toLimit = maxLimit;
+
+    // Keep available quantity consistent
+    const filledAmount = Number(order.filledAmount || 0);
+
+    // if (quantity < filledAmount) {
+    //   return res.json({
+    //     status: false,
+    //     Message: "Total quantity cannot be less than already filled quantity",
+    //   });
+    // }
+
+    order.available_qty = Math.max(quantity - filledAmount, 0);
+
+    await order.save();
+
+    return res.json({
+      status: true,
+      Message: "Order updated successfully",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error updating P2P order:", error);
+
+    return res.status(500).json({
+      status: false,
+      Message: "Internal server error, Please try later!",
+    });
+  }
+});
+
+router.post("/deleteP2pOrder", common.tokenmiddleware, async (req, res) => {
+  try {
+    const { orderId } = req.body;
+
+    const userId = req.userId;
+
+    if (!orderId) {
+      return res.json({
+        status: false,
+        Message: "Order ID is required",
+      });
+    }
+
+    const order = await p2pOrdersDB.findOne({
+      orderId: orderId,
+      userId: userId,
+    });
+
+    if (!order) {
+      return res.json({
+        status: false,
+        Message: "Order not found",
+      });
+    }
+
+    // Only active orders can be cancelled
+    if (order.status !== "active") {
+      return res.json({
+        status: false,
+        Message: "Only active orders can be deleted",
+      });
+    }
+
+    const deletedOrder = await p2pOrdersDB.findOneAndDelete({
+      orderId,
+      userId,
+    });
+
+    // order.status = "cancelled";
+
+    // await order.save();
+
+    return res.json({
+      status: true,
+      Message: "Order cancelled successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting P2P order:", error);
+
+    return res.status(500).json({
+      status: false,
+      Message: "Internal server error, Please try later!",
+    });
   }
 });
 

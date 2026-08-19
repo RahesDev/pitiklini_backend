@@ -5,7 +5,6 @@ var p2pOrderSchema = mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId, ref: 'Users', default:null, index:true,
         required: true,
-        default : ""
     },
     fromCurrency    : { type: mongoose.Schema.Types.ObjectId, ref: 'currency', index:true},
     toCurrency   : { type: mongoose.Schema.Types.ObjectId, ref: 'currency', index:true},
